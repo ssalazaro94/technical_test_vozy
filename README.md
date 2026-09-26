@@ -97,6 +97,14 @@ docker compose up --build
 - Swagger: http://localhost:8080/docs
 - Estado: http://localhost:8080/health (debe indicar `replay:golden_facts.json` y `database: ok`)
 
+Los puertos se eligen con `API_PORT` (por defecto 8080) y `DB_PORT` (por defecto 5433), en la terminal o en `.env`:
+
+```bash
+API_PORT=8089 DB_PORT=6543 docker compose up --build   # API en http://localhost:8089/docs
+```
+
+`API_PORT` es también el puerto en el que escucha la API dentro del contenedor, igual que la variable `PORT` que inyecta la plataforma en producción. En los ejemplos siguientes, reemplazar 8080 y 5433 si se cambiaron.
+
 ```bash
 # Auditar el archivo de conversaciones
 curl -F "file=@/ruta/al/dataset.json;type=application/json" \
