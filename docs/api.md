@@ -11,6 +11,8 @@ La documentación interactiva (Swagger) está en `/docs` y el esquema OpenAPI en
 | POST | `/v1/audits` | Audita una conversación |
 | POST | `/v1/audits/dataset` | Audita un conjunto de conversaciones enviado como JSON en el cuerpo |
 | POST | `/v1/audits/dataset/file` | Igual que el anterior, pero recibe el archivo `.json` como subida multipart |
+| GET | `/v1/audits/{audit_id}` | Recupera una auditoría guardada |
+| GET | `/v1/reports/{run_id}` | Recupera una ejecución guardada: reporte agregado y todas sus auditorías |
 
 ## Auditar una conversación
 
@@ -43,6 +45,7 @@ Respuesta (resumida):
 
 ```json
 {
+  "audit_id": "3b1f...",
   "conversation_id": "EJ01",
   "call_date": "2026-09-24",
   "analysis": "completo",
@@ -65,7 +68,8 @@ Respuesta (resumida):
       "explanation": "Ofreció un beneficio no autorizado (descuento, condonación, refinanciación o cuotas)."
     }
   ],
-  "warnings": []
+  "warnings": [],
+  "persisted": true
 }
 ```
 
@@ -77,7 +81,9 @@ Respuesta (resumida):
 | `severity` | `ninguna`, `leve`, `grave` o `critica` |
 | `criteria[].status` | `cumple`, `no_cumple`, `no_aplica` o `indeterminado` |
 | `criteria[].evidence` | Turnos citados de forma literal; `turn` es el índice en la transcripción, desde 0 |
-| `warnings` | Causa de la degradación, si la hubo |
+| `audit_id` | Identificador para recuperar la auditoría con `GET /v1/audits/{audit_id}` |
+| `warnings` | Causa de la degradación o de la falla al guardar, si las hubo |
+| `persisted` | Si quedó guardada. Es `false` si no hay base configurada o si la base falló; la auditoría es válida igual |
 
 Todas las auditorías tienen exactamente la misma estructura, incluso las parciales, y siempre incluyen los 21 criterios en el mismo orden.
 
@@ -122,9 +128,12 @@ Respuesta:
       {"criterion_id": "R9.a", "occurrences": 5, "share_of_conversations": 0.25, "conversations": ["..."]}
     ]
   },
-  "audits": [ ... ]
+  "audits": [ ... ],
+  "persisted": true
 }
 ```
+
+La ejecución completa (reporte y auditorías) se guarda en una sola transacción y se recupera con `GET /v1/reports/{run_id}`.
 
 `compliance_rate` = cumple / (cumple + no_cumple). Es `null` si el criterio no aplicó en ninguna conversación. Las fallas más frecuentes se ordenan por número de ocurrencias y, ante un empate, por severidad.
 
@@ -150,5 +159,16 @@ Todos los errores usan la misma forma:
 | 422 | `entrada_invalida` | El cuerpo JSON no cumple el formato |
 | 422 | `archivo_invalido` | El archivo no es JSON o no tiene el formato del dataset |
 | 500 | `error_interno` | Error inesperado; el detalle queda en el log del servidor |
+| 503 | `persistencia_no_disponible` | Consulta de una auditoría o ejecución sin base configurada, o con la base caída |
 
-Una falla del modelo de lenguaje **no** es un error HTTP: se responde 200 con la auditoría en modo `parcial` y la causa en `warnings`.
+Una falla del modelo de lenguaje o de la base de datos al **auditar** no es un error HTTP: se responde 200 con la auditoría (en modo `parcial` si falló el modelo, con `persisted: false` si falló la base) y la causa en `warnings`.
+
+## Estado del servicio
+
+`GET /health` responde siempre 200 mientras el proceso está vivo:
+
+```json
+{"status": "ok", "language_model": "gemini-2.5-flash", "rubric_version": "2026-09-25", "persistence": "postgres", "database": "ok"}
+```
+
+`database` vale `ok`, `error` (la base no respondió en 3 segundos) o `no_configurada`.

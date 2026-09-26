@@ -10,6 +10,8 @@
 | LLM | Gemini 2.5 Flash (tier gratuito) | Costo cero, salida JSON restringida por esquema, buena relación calidad y latencia para extracción |
 | Entorno | uv + `pyproject.toml` + `uv.lock` | Instalación reproducible y rápida |
 | Calidad | pytest, ruff, mypy en modo estricto | Tests sin red, lint y tipado estático en todo el código |
+| Persistencia | Postgres en Supabase, con SQLAlchemy async y asyncpg | SQL estándar sin acoplarse al SDK de Supabase: cambiar de proveedor es cambiar `DATABASE_URL` |
+| Despliegue | Docker (multi-stage, usuario sin privilegios) | La imagen que se prueba en local es la que corre en producción |
 
 ## Arquitectura hexagonal
 
@@ -70,10 +72,20 @@ Beneficios de esta división:
 
 Además, un limitador de ritmo del lado del cliente separa las llamadas (10 por minuto por defecto) para no agotar la cuota del tier gratuito, y un semáforo limita las llamadas simultáneas.
 
+## Persistencia
+
+- **Qué se guarda.** Cada auditoría completa como JSONB (es la fuente de verdad al leerla) más columnas consultables: conversación, puntaje, severidad, resultado y criterios fallidos (con índice GIN para buscar por criterio). Cada ejecución guarda además su reporte agregado. Una ejecución y sus auditorías se escriben en una sola transacción.
+- **Esquema propio (`callaudit`) y RLS activado.** Supabase expone el esquema `public` a través de su API REST con la clave pública del proyecto. Las tablas viven en otro esquema y además tienen row level security, de modo que no son accesibles desde esa API. El servicio se conecta como dueño de la base.
+- **Conexión por el pooler en modo sesión.** El plan gratuito de la plataforma de despliegue solo sale por IPv4 y la conexión directa de Supabase es IPv6, así que se usa el pooler, que acepta IPv4. El modo sesión conserva la conexión física, compatible con las sentencias preparadas de asyncpg, y es adecuado para un proceso de larga vida con un pool pequeño.
+- **Tolerante a fallos.** La persistencia nunca bloquea la respuesta: si la base falla, la auditoría se entrega con `persisted: false` y un aviso. Sin `DATABASE_URL` el servicio funciona sin guardar nada. Las conexiones se verifican antes de usarse (`pool_pre_ping`), así que el servicio se recupera solo cuando la base vuelve.
+- **Migraciones versionadas** en `supabase/migrations/`: el mismo SQL crea el esquema en el Postgres local y en Supabase.
+
 ## Estrategia de pruebas
 
 - **Tests golden:** con los hechos anotados a mano para las 20 conversaciones, el motor reproduce exactamente la evaluación manual (criterios fallidos y severidad). Aíslan la lógica determinista: si fallan, el error está en un criterio, no en el modelo.
 - **Tests unitarios:** montos y fechas en español, modo degradado, validación de hechos, puntaje, reporte, reintentos del adaptador de Gemini (con objetos reales del SDK y sin red) y todos los endpoints.
+- **Tests de integración:** el repositorio de Postgres contra una base real y migrada (se activan con `TEST_DATABASE_URL`).
+- **Stack local:** `docker compose up` levanta la imagen de producción y un Postgres con las migraciones. El proveedor `replay` permite probar el flujo completo sin clave de LLM.
 - **Medición del LLM real:** `scripts/evaluate_extraction.py` compara la extracción de Gemini con la anotación manual y reporta exactitud por campo, y precisión y recall de los veredictos.
 
 ## Limitaciones conocidas
@@ -86,4 +98,5 @@ Además, un limitador de ritmo del lado del cliente separa las llamadas (10 por 
 - **No determinismo residual.** Aun con `temperature=0`, el modelo puede variar entre ejecuciones en casos ambiguos. Los criterios de código no varían.
 - **Lote síncrono.** Evaluar 20 conversaciones respetando 10 llamadas por minuto toma unos 2 minutos en una sola petición HTTP. Para volúmenes mayores convendría un procesamiento asíncrono con cola.
 - **Sin autenticación.** La API es pública, como pide el ejercicio; en producción requeriría autenticación y límites por cliente.
+- **Pausa de la base gratuita.** Supabase pausa los proyectos gratuitos tras una semana sin actividad. Auditar sigue funcionando (con `persisted: false`), pero las consultas de auditorías guardadas responden 503 hasta reactivar el proyecto.
 - **Arranque en frío.** En el plan gratuito de la plataforma de despliegue, la primera petición después de un periodo sin tráfico puede tardar cerca de un minuto.
