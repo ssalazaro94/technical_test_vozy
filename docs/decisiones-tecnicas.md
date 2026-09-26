@@ -80,6 +80,16 @@ Además, un limitador de ritmo del lado del cliente separa las llamadas (10 por 
 - **Tolerante a fallos.** La persistencia nunca bloquea la respuesta: si la base falla, la auditoría se entrega con `persisted: false` y un aviso. Sin `DATABASE_URL` el servicio funciona sin guardar nada. Las conexiones se verifican antes de usarse (`pool_pre_ping`), así que el servicio se recupera solo cuando la base vuelve.
 - **Migraciones versionadas** en `supabase/migrations/`: el mismo SQL crea el esquema en el Postgres local y en Supabase.
 
+## Caché de hechos
+
+- **Qué se guarda:** solo extracciones del modelo que ya pasaron la validación contra la transcripción. Los fallos nunca se guardan.
+- **Clave:** huella SHA-256 de todo lo que determina la respuesta del modelo: las instrucciones (con la especificación del agente), la conversación tal como se envía al modelo (datos del cliente, fecha y cada turno), el esquema de respuesta y el nombre del modelo. El `id` de la conversación no participa: dos archivos pueden reutilizar un id con contenido distinto.
+- **Conversaciones nuevas o modificadas:** cualquier cambio (un carácter de un turno, un dato del cliente, la fecha, las reglas, el prompt o el modelo) produce otra clave, y se llama al modelo. No existe riesgo de servir los hechos de otra conversación.
+- **Validación al leer:** los hechos del caché se vuelven a validar contra la conversación; si no cuadran, se ignoran y se llama al modelo.
+- **Tolerante a fallos:** si la base no responde, la auditoría sigue con el modelo.
+- **Por qué:** la cuota gratuita del modelo es de 20 llamadas diarias. Sin caché, auditar el mismo archivo dos veces en un día (por ejemplo, la generación de `results.json` y la verificación de un evaluador) agotaría la cuota y la segunda ejecución saldría parcial. Con caché, repetir un archivo ya auditado es instantáneo, gratuito y da exactamente el mismo resultado. Una ejecución interrumpida por la cuota se completa más tarde gastando solo las llamadas faltantes.
+- **Transparencia:** cada auditoría indica `facts_origin` y cada ejecución `facts_origin_distribution`.
+
 ## Estrategia de pruebas
 
 - **Tests golden:** con los hechos anotados a mano para las 20 conversaciones, el motor reproduce exactamente la evaluación manual (criterios fallidos y severidad). Aíslan la lógica determinista: si fallan, el error está en un criterio, no en el modelo.
@@ -98,5 +108,6 @@ Además, un limitador de ritmo del lado del cliente separa las llamadas (10 por 
 - **No determinismo residual.** Se usa la temperatura por defecto del modelo, porque Google desaconseja bajarla en Gemini 3. En casos ambiguos, el modelo puede variar entre ejecuciones. Los criterios de código no varían, y la validación de turnos contra la transcripción acota el margen de error.
 - **Lote síncrono.** Evaluar 20 conversaciones respetando 10 llamadas por minuto toma unos 2 minutos en una sola petición HTTP. Para volúmenes mayores convendría un procesamiento asíncrono con cola.
 - **Sin autenticación.** La API es pública, como pide el ejercicio; en producción requeriría autenticación y límites por cliente.
+- **Cuota del modelo para conversaciones nuevas.** El caché solo evita llamadas para conversaciones ya analizadas. Con el tier gratuito (20 llamadas diarias en este proyecto), un lote grande de conversaciones nuevas se completa parcialmente y requiere repetirse tras la renovación de la cuota o pasar al tier de pago.
 - **Pausa de la base gratuita.** Supabase pausa los proyectos gratuitos tras una semana sin actividad. Auditar sigue funcionando (con `persisted: false`), pero las consultas de auditorías guardadas responden 503 hasta reactivar el proyecto.
 - **Arranque en frío.** En el plan gratuito de la plataforma de despliegue, la primera petición después de un periodo sin tráfico puede tardar cerca de un minuto.

@@ -6,6 +6,8 @@ from pydantic import SecretStr
 from callaudit.adapters.llm.disabled import DisabledLanguageModel
 from callaudit.adapters.llm.gemini import GeminiLanguageModel
 from callaudit.adapters.persistence.postgres import PostgresAuditRepository
+from callaudit.application.fact_cache import CachedFactSource
+from callaudit.application.fact_extraction import FactExtractor
 from callaudit.bootstrap import build_audit_service, build_language_model
 from callaudit.config import Settings
 from callaudit.domain.audit import AnalysisStatus
@@ -73,3 +75,29 @@ def test_database_url_selects_postgres() -> None:
         )
     )
     assert isinstance(service.repository, PostgresAuditRepository)
+
+
+def test_database_and_model_enable_the_fact_cache() -> None:
+    service = build_audit_service(
+        _settings(
+            gemini_api_key=SecretStr("fake-key"),
+            database_url=SecretStr("postgresql+asyncpg://u:p@localhost:5999/db"),
+        )
+    )
+    assert isinstance(service._facts_source, CachedFactSource)
+
+
+def test_the_fact_cache_can_be_disabled() -> None:
+    service = build_audit_service(
+        _settings(
+            gemini_api_key=SecretStr("fake-key"),
+            database_url=SecretStr("postgresql+asyncpg://u:p@localhost:5999/db"),
+            facts_cache_enabled=False,
+        )
+    )
+    assert isinstance(service._facts_source, FactExtractor)
+
+
+def test_without_database_there_is_no_cache() -> None:
+    service = build_audit_service(_settings(gemini_api_key=SecretStr("fake-key")))
+    assert isinstance(service._facts_source, FactExtractor)

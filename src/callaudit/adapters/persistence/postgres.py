@@ -6,7 +6,7 @@ the table queryable with plain SQL without parsing JSON.
 """
 
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Any
 from uuid import UUID
 
@@ -25,12 +25,14 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 
 from callaudit.application.models import DatasetAudit
 from callaudit.application.ports import PersistenceError
 from callaudit.domain.audit import ConversationAudit
+from callaudit.domain.facts import ConversationFacts
 from callaudit.domain.report import DatasetReport
 
 SCHEMA = "callaudit"
@@ -66,6 +68,15 @@ conversation_audits = Table(
 )
 
 
+fact_cache = Table(
+    "fact_cache",
+    metadata,
+    Column("cache_key", Text, primary_key=True),
+    Column("model", Text, nullable=False),
+    Column("facts", JSONB, nullable=False),
+)
+
+
 def _audit_row(
     audit: ConversationAudit, run_id: UUID | None = None, position: int | None = None
 ) -> dict[str, Any]:
@@ -89,23 +100,37 @@ def _stored(audit_json: dict[str, Any]) -> ConversationAudit:
     return ConversationAudit.model_validate({**audit_json, "persisted": True})
 
 
+def create_engine(url: str, *, timeout_seconds: float = 10) -> AsyncEngine:
+    """One connection pool, shared by the audit repository and the fact cache."""
+    return create_async_engine(
+        url,
+        pool_size=5,
+        max_overflow=5,
+        # Supabase's pooler and container restarts can drop idle
+        # connections; check them before use and recycle regularly.
+        pool_pre_ping=True,
+        pool_recycle=300,
+        connect_args={"timeout": timeout_seconds, "command_timeout": timeout_seconds},
+    )
+
+
+@asynccontextmanager
+async def _transaction(engine: AsyncEngine) -> AsyncIterator[AsyncConnection]:
+    """One transaction; any database or network error becomes `PersistenceError`."""
+    try:
+        async with engine.begin() as connection:
+            yield connection
+    except (SQLAlchemyError, OSError, TimeoutError) as exc:
+        raise PersistenceError(f"{type(exc).__name__}: {exc}") from exc
+
+
 class PostgresAuditRepository:
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
 
     @classmethod
     def from_url(cls, url: str, *, timeout_seconds: float = 10) -> "PostgresAuditRepository":
-        engine = create_async_engine(
-            url,
-            pool_size=5,
-            max_overflow=5,
-            # Supabase's pooler and container restarts can drop idle
-            # connections; check them before use and recycle regularly.
-            pool_pre_ping=True,
-            pool_recycle=300,
-            connect_args={"timeout": timeout_seconds, "command_timeout": timeout_seconds},
-        )
-        return cls(engine)
+        return cls(create_engine(url, timeout_seconds=timeout_seconds))
 
     @property
     def name(self) -> str:
@@ -115,14 +140,8 @@ class PostgresAuditRepository:
     def enabled(self) -> bool:
         return True
 
-    @asynccontextmanager
-    async def _transaction(self) -> AsyncIterator[AsyncConnection]:
-        """One transaction; any database or network error becomes `PersistenceError`."""
-        try:
-            async with self._engine.begin() as connection:
-                yield connection
-        except (SQLAlchemyError, OSError, TimeoutError) as exc:
-            raise PersistenceError(f"{type(exc).__name__}: {exc}") from exc
+    def _transaction(self) -> AbstractAsyncContextManager[AsyncConnection]:
+        return _transaction(self._engine)
 
     async def save_audit(self, audit: ConversationAudit) -> None:
         async with self._transaction() as connection:
@@ -187,3 +206,35 @@ class PostgresAuditRepository:
 
     async def close(self) -> None:
         await self._engine.dispose()
+
+
+class PostgresFactCache:
+    """Validated model extractions, keyed by the fingerprint of their inputs."""
+
+    def __init__(self, engine: AsyncEngine) -> None:
+        self._engine = engine
+
+    @property
+    def name(self) -> str:
+        return "postgres"
+
+    async def get(self, key: str) -> ConversationFacts | None:
+        query = select(fact_cache.c.facts).where(fact_cache.c.cache_key == key)
+        async with _transaction(self._engine) as connection:
+            stored = (await connection.execute(query)).scalar_one_or_none()
+        if stored is None:
+            return None
+        try:
+            return ConversationFacts.model_validate(stored)
+        except ValueError:
+            # An entry written by an older schema is a miss, not an error.
+            return None
+
+    async def put(self, key: str, model: str, facts: ConversationFacts) -> None:
+        statement = (
+            pg_insert(fact_cache)
+            .values(cache_key=key, model=model, facts=facts.model_dump(mode="json"))
+            .on_conflict_do_nothing(index_elements=[fact_cache.c.cache_key])
+        )
+        async with _transaction(self._engine) as connection:
+            await connection.execute(statement)

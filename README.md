@@ -49,7 +49,8 @@ flowchart LR
 2. **Veredictos (código).** Cada criterio es una función pura que combina esos hechos con los datos del cliente: compara dígitos del documento, convierte montos dichos en palabras, calcula la ventana de fechas, busca términos prohibidos.
 3. **Citas (código).** La evidencia se copia de la transcripción por índice de turno, por lo que siempre es literal. Un `no_cumple` sin cita es rechazado por el propio modelo de salida.
 4. **Puntaje y reporte.** Puntaje ponderado por severidad, severidad global y agregación por criterio.
-5. **Persistencia.** La auditoría (o la ejecución completa, en una sola transacción) se guarda en Postgres y se puede recuperar por su identificador. Si la base falla, la auditoría se entrega igual con `persisted: false`.
+5. **Caché de hechos.** Antes de llamar al modelo se busca una extracción previa de una conversación idéntica: misma transcripción, datos del cliente, fecha, especificación del agente, versión del prompt y modelo (la clave es una huella SHA-256 de todo eso; el `id` de la conversación no participa). Si existe, se reutiliza sin gastar cuota; cualquier diferencia, por mínima que sea, provoca una llamada nueva al modelo. Cada auditoría indica el origen de sus hechos en `facts_origin` (`modelo`, `cache` o `replay`).
+6. **Persistencia.** La auditoría (o la ejecución completa, en una sola transacción) se guarda en Postgres y se puede recuperar por su identificador. Si la base falla, la auditoría se entrega igual con `persisted: false`.
 
 Si el LLM no está disponible (sin clave, cuota agotada, error de red), la auditoría no falla: se evalúan los criterios que solo dependen de código, el resto queda `indeterminado` y la auditoría se marca `parcial` con la causa.
 
@@ -119,7 +120,7 @@ curl http://localhost:8089/v1/reports/<run_id>
 docker compose exec db psql -U postgres -c "select conversation_id, severity, score, failed_criteria from callaudit.conversation_audits"
 ```
 
-`docker compose down -v` detiene todo y borra la base local. Las migraciones se aplican solas al crear la base por primera vez.
+`docker compose down -v` detiene todo y borra la base local. Las migraciones se aplican solas al crear la base por primera vez; si la base local se creó antes de una migración nueva, se aplica con `docker compose exec -T db psql -U postgres < supabase/migrations/<archivo>.sql` o recreándola con `down -v`.
 
 #### Probar con el modelo real en el mismo stack
 
@@ -176,6 +177,8 @@ curl -F "file=@/ruta/al/dataset.json;type=application/json" \
 
 `results.json` es la respuesta completa del servicio: el reporte agregado y la auditoría de cada conversación, con sus citas. Es el entregable y se versiona en la raíz del repositorio.
 
+Si la cuota diaria se agota a mitad de la ejecución, las conversaciones sin análisis salen como `parcial` (el servicio no falla). Al repetir el mismo comando después de la renovación de la cuota, las conversaciones ya analizadas salen del caché de hechos y solo las faltantes llaman al modelo. `facts_origin_distribution` en la respuesta muestra cuántas vinieron de cada origen.
+
 **2. Medir la precisión** (sin modelo, sin clave y sin dataset; se puede repetir cuantas veces se quiera):
 
 ```bash
@@ -214,4 +217,5 @@ Reporta además cuántas conversaciones coinciden exactamente y cuántas tienen 
 | `REPLAY_FACTS_PATH` | vacío | Con `replay`: archivo de hechos anotados a reproducir |
 | `DATABASE_URL` | vacío | Postgres (`postgresql+asyncpg://...`); sin ella no se guardan auditorías |
 | `DATABASE_TIMEOUT_SECONDS` | `10` | Tiempo máximo de conexión y de consulta |
+| `FACTS_CACHE_ENABLED` | `true` | Reutilizar la extracción del modelo para conversaciones idénticas (requiere `DATABASE_URL`) |
 | `LOCAL_DATASET_PATH` | vacío | Solo tests y scripts locales: ruta al archivo de conversaciones |

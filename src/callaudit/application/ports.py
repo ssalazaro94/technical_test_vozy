@@ -4,13 +4,14 @@ Adapters implement these protocols structurally (no inheritance), so the
 domain and the use cases never import a vendor SDK.
 """
 
+from dataclasses import dataclass
 from typing import Protocol
 from uuid import UUID
 
 from pydantic import BaseModel
 
 from callaudit.application.models import DatasetAudit
-from callaudit.domain.audit import ConversationAudit
+from callaudit.domain.audit import ConversationAudit, FactsOrigin
 from callaudit.domain.conversation import AgentSpec, Conversation
 from callaudit.domain.facts import ConversationFacts
 
@@ -43,14 +44,37 @@ class StructuredLanguageModel(Protocol):
         ...
 
 
+@dataclass(frozen=True)
+class Extraction:
+    """The facts of a conversation and where they came from."""
+
+    facts: ConversationFacts
+    origin: FactsOrigin
+
+
 class FactSource(Protocol):
-    """Where the facts of a conversation come from: a language model, or a replay in development."""
+    """Where the facts of a conversation come from: the model, a cache, or a replay."""
 
     @property
     def name(self) -> str: ...
 
-    async def extract(self, conversation: Conversation, spec: AgentSpec) -> ConversationFacts:
+    async def obtain(self, conversation: Conversation, spec: AgentSpec) -> Extraction:
         """Return the facts, or raise; the audit service degrades on any exception."""
+        ...
+
+
+class FactCache(Protocol):
+    """Stores validated model extractions by a fingerprint of everything that produced them."""
+
+    @property
+    def name(self) -> str: ...
+
+    async def get(self, key: str) -> ConversationFacts | None:
+        """The cached facts, None on a miss; raise `PersistenceError` if the store fails."""
+        ...
+
+    async def put(self, key: str, model: str, facts: ConversationFacts) -> None:
+        """Store the facts; an existing key is left untouched."""
         ...
 
 

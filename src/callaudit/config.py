@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     database_url: SecretStr | None = None
     database_timeout_seconds: float = Field(default=10, gt=0)
 
+    # Reuse the model's extraction of an identical conversation (needs a
+    # database). Any change to the conversation, rules, prompt or model misses.
+    facts_cache_enabled: bool = True
+
     # Local tooling only (tests and scripts): path to the client's dataset,
     # which is provided privately and is never versioned.
     local_dataset_path: Path | None = None

@@ -55,6 +55,8 @@ El tier gratuito no cobra: da una cuota de llamadas por minuto y por día, por p
 
 ## Cómo reducir el costo
 
+- **Caché de hechos (implementado).** Una conversación idéntica a una ya analizada no llama al modelo: auditarla de nuevo cuesta cero. Las cifras de arriba corresponden a 1.000 conversaciones distintas; en escenarios con re-auditorías del mismo material (por ejemplo, ajustes del reporte o verificaciones), el costo adicional es nulo.
+
 - **Bajar el nivel de razonamiento** (`thinking_level`: `minimal`, `low` o `medium`). Es la palanca principal: el razonamiento se cobra como salida, que es el componente más caro. La tarea es de localización, no de razonamiento largo, pero conviene medir si la precisión se mantiene antes de bajarlo.
 - **Un modelo más liviano.** `gemini-3.5-flash-lite` cuesta USD 0,30 y 2,50 por millón (entrada y salida): unos USD 1,8 por 1.000 conversaciones con razonamiento mínimo. Habría que validar su precisión con el script de evaluación.
 - **Caché de contexto.** Cerca del 90% de la entrada (instrucciones y esquema) es idéntica en todas las llamadas. La caché cobra menos por esos tokens repetidos.

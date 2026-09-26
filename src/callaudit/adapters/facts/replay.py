@@ -8,6 +8,8 @@ and /health), so a replayed result can never pass for a real one.
 import json
 from pathlib import Path
 
+from callaudit.application.ports import Extraction
+from callaudit.domain.audit import FactsOrigin
 from callaudit.domain.conversation import AgentSpec, Conversation
 from callaudit.domain.facts import ConversationFacts
 
@@ -22,8 +24,8 @@ class ReplayFactSource:
     def name(self) -> str:
         return self._name
 
-    async def extract(self, conversation: Conversation, spec: AgentSpec) -> ConversationFacts:
+    async def obtain(self, conversation: Conversation, spec: AgentSpec) -> Extraction:
         facts = self._facts.get(conversation.id)
         if facts is None:
             raise LookupError(f"sin hechos anotados para la conversación {conversation.id}")
-        return facts
+        return Extraction(facts, FactsOrigin.REPLAY)

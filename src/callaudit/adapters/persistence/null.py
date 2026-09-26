@@ -5,6 +5,7 @@ from uuid import UUID
 from callaudit.application.models import DatasetAudit
 from callaudit.application.ports import PersistenceUnavailableError
 from callaudit.domain.audit import ConversationAudit
+from callaudit.domain.facts import ConversationFacts
 
 
 class NullAuditRepository:
@@ -34,4 +35,18 @@ class NullAuditRepository:
         raise PersistenceUnavailableError("no hay base de datos configurada (DATABASE_URL)")
 
     async def close(self) -> None:
+        return None
+
+
+class NullFactCache:
+    """No cache: every lookup misses and nothing is stored."""
+
+    @property
+    def name(self) -> str:
+        return "deshabilitada"
+
+    async def get(self, key: str) -> ConversationFacts | None:
+        return None
+
+    async def put(self, key: str, model: str, facts: ConversationFacts) -> None:
         return None

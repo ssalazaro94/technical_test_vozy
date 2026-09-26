@@ -86,6 +86,7 @@ Respuesta (resumida):
 | `criteria[].evidence` | Turnos citados de forma literal; `turn` es el índice en la transcripción, desde 0 |
 | `audit_id` | Identificador para recuperar la auditoría con `GET /v1/audits/{audit_id}` |
 | `warnings` | Causa de la degradación o de la falla al guardar, si las hubo |
+| `facts_origin` | De dónde salieron los hechos: `modelo` (llamada nueva), `cache` (extracción previa de una conversación idéntica) o `replay` (solo desarrollo). Nulo en análisis parcial |
 | `persisted` | Si quedó guardada. Es `false` si no hay base configurada o si la base falló; la auditoría es válida igual |
 
 Todas las auditorías tienen exactamente la misma estructura, incluso las parciales, y siempre incluyen los 21 criterios en el mismo orden.
@@ -163,6 +164,8 @@ Respuesta:
 ```
 
 La ejecución completa (reporte y auditorías) se guarda en una sola transacción y se recupera con `GET /v1/reports/{run_id}`.
+
+`facts_origin_distribution` resume de dónde salieron los hechos de cada auditoría, por ejemplo `{"cache": 18, "modelo": 2}`; las auditorías parciales cuentan como `sin_analisis`.
 
 `compliance_rate` = cumple / (cumple + no_cumple). Es `null` si el criterio no aplicó en ninguna conversación. Las fallas más frecuentes se ordenan por número de ocurrencias y, ante un empate, por severidad.
 

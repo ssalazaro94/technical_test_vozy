@@ -8,12 +8,11 @@ from uuid import UUID, uuid4
 
 from callaudit.application.agent_spec import LINA_AGENT_SPEC
 from callaudit.application.models import DatasetAudit
-from callaudit.application.ports import AuditRepository, FactSource
+from callaudit.application.ports import AuditRepository, Extraction, FactSource
 from callaudit.domain.audit import ConversationAudit
 from callaudit.domain.conversation import AgentSpec, Conversation, Dataset
 from callaudit.domain.criteria import RUBRIC_VERSION
 from callaudit.domain.engine import audit_conversation
-from callaudit.domain.facts import ConversationFacts
 from callaudit.domain.report import build_report
 
 logger = logging.getLogger(__name__)
@@ -49,7 +48,7 @@ class AuditService:
 
     async def _facts(
         self, conversation: Conversation, spec: AgentSpec
-    ) -> tuple[ConversationFacts | None, list[str]]:
+    ) -> tuple[Extraction | None, list[str]]:
         """Facts from the source, or None plus a warning. Never raises.
 
         The catch is deliberately broad: whatever goes wrong on the model side
@@ -58,7 +57,7 @@ class AuditService:
         """
         async with self._semaphore:
             try:
-                return await self._facts_source.extract(conversation, spec), []
+                return await self._facts_source.obtain(conversation, spec), []
             except Exception as exc:
                 logger.warning("fact extraction failed for %s: %r", conversation.id, exc)
                 return None, [
@@ -67,8 +66,11 @@ class AuditService:
                 ]
 
     async def _audit(self, conversation: Conversation, spec: AgentSpec) -> ConversationAudit:
-        facts, warnings = await self._facts(conversation, spec)
-        return audit_conversation(conversation, facts, warnings=warnings)
+        extraction, warnings = await self._facts(conversation, spec)
+        if extraction is None:
+            return audit_conversation(conversation, None, warnings=warnings)
+        audit = audit_conversation(conversation, extraction.facts, warnings=warnings)
+        return audit.model_copy(update={"facts_origin": extraction.origin})
 
     async def audit_conversation(
         self, conversation: Conversation, spec: AgentSpec | None = None

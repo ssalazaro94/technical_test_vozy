@@ -140,3 +140,30 @@ class BrokenAuditRepository(InMemoryAuditRepository):
 
     async def ping(self) -> None:
         raise PersistenceError("connection refused")
+
+
+class InMemoryFactCache:
+    def __init__(self) -> None:
+        self.entries: dict[str, ConversationFacts] = {}
+        self.gets = 0
+        self.puts = 0
+
+    @property
+    def name(self) -> str:
+        return "memoria"
+
+    async def get(self, key: str) -> ConversationFacts | None:
+        self.gets += 1
+        return self.entries.get(key)
+
+    async def put(self, key: str, model: str, facts: ConversationFacts) -> None:
+        self.puts += 1
+        self.entries.setdefault(key, facts)
+
+
+class BrokenFactCache(InMemoryFactCache):
+    async def get(self, key: str) -> ConversationFacts | None:
+        raise PersistenceError("connection refused")
+
+    async def put(self, key: str, model: str, facts: ConversationFacts) -> None:
+        raise PersistenceError("connection refused")

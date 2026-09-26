@@ -49,6 +49,14 @@ class Method(StrEnum):
     HYBRID = "hibrido"
 
 
+class FactsOrigin(StrEnum):
+    """Where the facts behind an audit came from."""
+
+    MODEL = "modelo"  # a fresh language model call
+    CACHE = "cache"  # a previous model extraction of an identical conversation
+    REPLAY = "replay"  # hand-annotated facts, local development only
+
+
 class AnalysisStatus(StrEnum):
     COMPLETE = "completo"
     PARTIAL = "parcial"
@@ -94,6 +102,11 @@ class ConversationAudit(_OutputModel):
     failed_criteria: list[str]
     criteria: list[CriterionResult]
     warnings: list[str]
+    facts_origin: FactsOrigin | None = Field(
+        default=None,
+        description="Origen de los hechos: 'modelo', 'cache' o 'replay'; nulo si el análisis "
+        "del modelo falló.",
+    )
     persisted: bool = Field(
         default=False,
         description="Si la auditoría quedó guardada y puede recuperarse por su identificador.",

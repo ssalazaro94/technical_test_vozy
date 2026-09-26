@@ -7,8 +7,13 @@ from callaudit.adapters.llm.disabled import DisabledLanguageModel
 from callaudit.adapters.llm.gemini import GeminiLanguageModel, RetryPolicy
 from callaudit.adapters.llm.rate_limit import MinIntervalRateLimiter
 from callaudit.adapters.persistence.null import NullAuditRepository
-from callaudit.adapters.persistence.postgres import PostgresAuditRepository
+from callaudit.adapters.persistence.postgres import (
+    PostgresAuditRepository,
+    PostgresFactCache,
+    create_engine,
+)
 from callaudit.application.audit_service import AuditService
+from callaudit.application.fact_cache import CachedFactSource
 from callaudit.application.fact_extraction import FactExtractor
 from callaudit.application.ports import AuditRepository, FactSource, StructuredLanguageModel
 from callaudit.config import Settings
@@ -49,19 +54,26 @@ def build_fact_source(settings: Settings) -> FactSource:
     )
 
 
-def build_repository(settings: Settings) -> AuditRepository:
-    if settings.database_url is None:
-        logger.warning("DATABASE_URL is not set; audits will not be stored")
-        return NullAuditRepository()
-    return PostgresAuditRepository.from_url(
-        settings.database_url.get_secret_value(),
-        timeout_seconds=settings.database_timeout_seconds,
-    )
-
-
 def build_audit_service(settings: Settings) -> AuditService:
-    return AuditService(
-        build_fact_source(settings),
-        build_repository(settings),
-        max_concurrency=settings.llm_max_concurrency,
+    engine = (
+        create_engine(
+            settings.database_url.get_secret_value(),
+            timeout_seconds=settings.database_timeout_seconds,
+        )
+        if settings.database_url is not None
+        else None
     )
+    repository: AuditRepository
+    if engine is None:
+        logger.warning("DATABASE_URL is not set; audits will not be stored")
+        repository = NullAuditRepository()
+    else:
+        repository = PostgresAuditRepository(engine)
+
+    facts = build_fact_source(settings)
+    # The cache wraps the model extractor even without a key or quota: a
+    # conversation analysed before still gets a complete audit.
+    if isinstance(facts, FactExtractor) and settings.facts_cache_enabled and engine is not None:
+        facts = CachedFactSource(facts, PostgresFactCache(engine))
+
+    return AuditService(facts, repository, max_concurrency=settings.llm_max_concurrency)

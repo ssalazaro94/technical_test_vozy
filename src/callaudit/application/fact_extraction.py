@@ -1,7 +1,12 @@
 """Use case: obtain `ConversationFacts` for one conversation from the language model."""
 
-from callaudit.application.ports import InvalidResponseError, StructuredLanguageModel
+from callaudit.application.ports import (
+    Extraction,
+    InvalidResponseError,
+    StructuredLanguageModel,
+)
 from callaudit.application.prompts import build_system_prompt, build_user_prompt
+from callaudit.domain.audit import FactsOrigin
 from callaudit.domain.conversation import AgentSpec, Conversation
 from callaudit.domain.facts import ConversationFacts
 
@@ -25,6 +30,9 @@ class FactExtractor:
     @property
     def name(self) -> str:
         return self._llm.model_name
+
+    async def obtain(self, conversation: Conversation, spec: AgentSpec) -> Extraction:
+        return Extraction(await self.extract(conversation, spec), FactsOrigin.MODEL)
 
     async def extract(self, conversation: Conversation, spec: AgentSpec) -> ConversationFacts:
         system_prompt = build_system_prompt(spec)
