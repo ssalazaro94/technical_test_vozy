@@ -3,7 +3,7 @@ name = "callaudit"
 version = "0.1.0"
 description = "Servicio de auditoria automatica de llamadas de cobranza contra una rubrica basada en las reglas del agente."
 authors = [
-    { name = "Sebastian Salazar", email = "ssalazar@lynks.com.co" }
+    { name = "Sebastian Salazar", email = "sebassalazaro20@gmail.com" }
 ]
 requires-python = ">=3.12"
 dependencies = [
