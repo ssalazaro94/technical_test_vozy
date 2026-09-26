@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from callaudit.adapters.http.client_limits import ClientRateLimiter
+from callaudit.adapters.http.docs import router as docs_router
 from callaudit.adapters.http.errors import register_error_handlers
 from callaudit.adapters.http.routes import router
 from callaudit.application.audit_service import AuditService
@@ -60,9 +61,13 @@ def create_app(
         version="1.0.0",
         description=DESCRIPTION,
         lifespan=lifespan,
+        # Rendered by adapters.http.docs, with the service's own favicon.
+        docs_url=None,
+        redoc_url=None,
     )
     app.state.audit_service = service
     app.state.client_limiter = client_limiter
+    app.include_router(docs_router)
     app.include_router(router)
     register_error_handlers(app)
     return app

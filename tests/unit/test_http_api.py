@@ -354,3 +354,35 @@ class TestReadEndpoints:
         assert audit.status_code == 200
         assert audit.json()["persisted"] is False
         assert read.status_code == 503
+
+
+class TestDocsAndFavicon:
+    async def test_the_favicon_is_served_as_svg(self, client: httpx.AsyncClient) -> None:
+        response = await client.get("/favicon.svg")
+
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "image/svg+xml"
+        assert response.content.startswith(b"<svg")
+        assert "max-age" in response.headers["cache-control"]
+
+    async def test_favicon_ico_redirects_to_the_svg(self, client: httpx.AsyncClient) -> None:
+        response = await client.get("/favicon.ico")
+
+        assert response.status_code == 301
+        assert response.headers["location"] == "/favicon.svg"
+
+    @pytest.mark.parametrize("path", ["/docs", "/redoc"])
+    async def test_documentation_pages_use_the_service_favicon(
+        self, client: httpx.AsyncClient, path: str
+    ) -> None:
+        response = await client.get(path)
+
+        assert response.status_code == 200
+        assert 'href="/favicon.svg"' in response.text
+        assert "fastapi.tiangolo.com/img/favicon.png" not in response.text
+        assert "/openapi.json" in response.text
+
+    async def test_docs_routes_stay_out_of_the_api_schema(self, client: httpx.AsyncClient) -> None:
+        paths = (await client.get("/openapi.json")).json()["paths"]
+
+        assert not {"/docs", "/redoc", "/favicon.svg", "/favicon.ico"} & set(paths)
