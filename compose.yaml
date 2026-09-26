@@ -1,17 +1,18 @@
 # Local stack to try the whole service before deploying: the same image that
 # runs in production, plus a Postgres with the same migrations as Supabase.
 #
-#   docker compose up -d --build                     API on http://localhost:8089/docs
-#   API_LLM_PROVIDER=gemini docker compose up -d api  same API, real model (uses quota)
-#   docker compose up -d api                          back to replay (no quota)
-#   docker compose down -v                            stop and wipe the local database
+#   docker compose up -d --build   API on http://localhost:8089/docs
+#   docker compose up -d api       apply .env changes (e.g. LLM_PROVIDER) to the API
+#   docker compose down -v         stop and wipe the local database
 #
 # Ports come from API_PORT and DB_PORT (shell or .env); the defaults are 8089
 # and 5433. API_PORT is also the port uvicorn listens on inside the container,
 # the same way Render sets PORT; Postgres always listens on 5432 inside.
 #
-# By default no language model is called: the "replay" provider serves the
-# hand-annotated facts in tests/fixtures, so audits are complete without a key.
+# LLM_PROVIDER and GEMINI_API_KEY come from .env. With LLM_PROVIDER=replay (the
+# default) no model is called: the hand-annotated facts in tests/fixtures are
+# served, so audits are complete without a key or quota. With gemini, every
+# audit uses quota.
 
 name: callaudit
 
@@ -38,13 +39,8 @@ services:
     ports:
       - "127.0.0.1:${API_PORT:-8089}:${API_PORT:-8089}"
     environment:
-      # Same variable Render injects: uvicorn listens on it inside the container.
       PORT: ${API_PORT:-8089}
-      # replay (default): annotated facts, no quota. gemini: the real model.
-      # Chosen per run, e.g. API_LLM_PROVIDER=gemini docker compose up -d api
-      LLM_PROVIDER: ${API_LLM_PROVIDER:-replay}
-      # Taken from .env by Compose interpolation; the key is never written here
-      # and never baked into the image.
+      LLM_PROVIDER: ${LLM_PROVIDER:-replay}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       REPLAY_FACTS_PATH: /app/dev/golden_facts.json
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/postgres

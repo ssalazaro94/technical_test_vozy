@@ -121,14 +121,13 @@ docker compose exec db psql -U postgres -c "select conversation_id, severity, sc
 
 #### Probar con el modelo real en el mismo stack
 
-Con `GEMINI_API_KEY` definida en `.env`, se cambia el proveedor solo del contenedor de la API (la base y sus datos se conservan):
+El contenedor de la API toma `LLM_PROVIDER` y `GEMINI_API_KEY` del `.env`. Para usar el modelo real se define `LLM_PROVIDER=gemini` (y la clave) en `.env`, y se recrea solo la API (la base y sus datos se conservan):
 
 ```bash
-API_LLM_PROVIDER=gemini docker compose up -d api   # modelo real: cada auditoría consume cuota
-docker compose up -d api                           # vuelve a replay (sin cuota)
+docker compose up -d api
 ```
 
-`/health` indica el proveedor activo (`gemini-2.5-flash` o `replay:golden_facts.json`). La clave llega al contenedor por interpolación desde `.env`: no se escribe en `compose.yaml` ni queda dentro de la imagen.
+Con `LLM_PROVIDER=gemini` cada auditoría consume cuota del modelo. Para volver a probar sin cuota: `LLM_PROVIDER=replay` en `.env` y de nuevo `docker compose up -d api`. `/health` indica el proveedor activo. La clave llega al contenedor por interpolación desde `.env`: no se escribe en `compose.yaml` ni queda dentro de la imagen.
 
 ### Opción B: servicio directo con uv
 
