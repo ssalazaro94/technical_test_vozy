@@ -1,0 +1,36 @@
+# Render Blueprint: the production web service, described as code.
+#
+# The image is built from the same Dockerfile used locally. Render injects PORT
+# and terminates TLS. Secrets are declared with `sync: false`: Render asks for
+# them in the dashboard when the Blueprint is created, and they never live in
+# this repository.
+
+services:
+  - type: web
+    name: callaudit
+    runtime: docker
+    plan: free
+    # Same region as the Supabase project (us-east-1), to keep database
+    # round trips short.
+    region: virginia
+    branch: main
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: LLM_PROVIDER
+        value: gemini
+      - key: LLM_MODEL
+        value: gemini-3.8-flash
+      # Free tier guard rails; adjust to the limits shown in Google AI Studio.
+      - key: LLM_REQUESTS_PER_MINUTE
+        value: "10"
+      - key: LLM_MAX_CONCURRENCY
+        value: "4"
+      - key: GEMINI_API_KEY
+        sync: false
+      # Supabase pooler, session mode (port 5432): the free plan only has
+      # IPv4 egress and the direct database host is IPv6-only.
+      - key: DATABASE_URL
+        sync: false
