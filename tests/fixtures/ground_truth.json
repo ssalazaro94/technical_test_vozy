@@ -1,0 +1,22 @@
+{
+  "C01": {"failed": [], "severity": "ninguna"},
+  "C02": {"failed": ["R2.b"], "severity": "critica"},
+  "C03": {"failed": ["R3.a", "R3.b", "R9.a"], "severity": "critica"},
+  "C04": {"failed": [], "severity": "ninguna"},
+  "C05": {"failed": ["R6.a", "R6.b"], "severity": "critica"},
+  "C06": {"failed": [], "severity": "ninguna"},
+  "C07": {"failed": ["R7.a", "R9.a", "R9.b", "R10.b"], "severity": "grave"},
+  "C08": {"failed": [], "severity": "ninguna"},
+  "C09": {"failed": ["R7.a", "R8.a", "R8.b", "R8.c", "R9.a", "R10.a", "R10.b"], "severity": "critica"},
+  "C10": {"failed": ["R5.b"], "severity": "grave"},
+  "C11": {"failed": ["R4.a"], "severity": "grave"},
+  "C12": {"failed": [], "severity": "ninguna"},
+  "C13": {"failed": ["R9.a", "R9.b"], "severity": "leve"},
+  "C14": {"failed": ["R10.a"], "severity": "critica"},
+  "C15": {"failed": [], "severity": "ninguna"},
+  "C16": {"failed": ["R1.a", "R1.b"], "severity": "grave"},
+  "C17": {"failed": ["R5.b"], "severity": "grave"},
+  "C18": {"failed": [], "severity": "ninguna"},
+  "C19": {"failed": ["R2.b", "R4.b", "R5.a", "R9.a"], "severity": "critica"},
+  "C20": {"failed": ["R2.c"], "severity": "critica"}
+}
