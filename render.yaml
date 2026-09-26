@@ -23,11 +23,12 @@ services:
         value: gemini
       - key: LLM_MODEL
         value: gemini-3.8-flash
-      # Free tier guard rails; adjust to the limits shown in Google AI Studio.
+      # Free tier guard rails. The project's gemini-3.8-flash limits in Google AI
+      # Studio are 5 requests per minute and 20 per day: stay below 5 RPM.
       - key: LLM_REQUESTS_PER_MINUTE
-        value: "10"
-      - key: LLM_MAX_CONCURRENCY
         value: "4"
+      - key: LLM_MAX_CONCURRENCY
+        value: "2"
       - key: GEMINI_API_KEY
         sync: false
       # Supabase pooler, session mode (port 5432): the free plan only has
