@@ -18,3 +18,7 @@ class DatasetAudit(BaseModel):
     model: str = Field(description="Modelo de lenguaje usado para extraer los hechos.")
     report: DatasetReport
     audits: list[ConversationAudit]
+    persisted: bool = Field(
+        default=False,
+        description="Si la ejecución quedó guardada y puede recuperarse por run_id.",
+    )

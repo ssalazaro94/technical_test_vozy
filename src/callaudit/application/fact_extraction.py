@@ -22,6 +22,10 @@ class FactExtractor:
         self._llm = llm
         self._max_attempts = max_attempts
 
+    @property
+    def name(self) -> str:
+        return self._llm.model_name
+
     async def extract(self, conversation: Conversation, spec: AgentSpec) -> ConversationFacts:
         system_prompt = build_system_prompt(spec)
         feedback: list[str] = []

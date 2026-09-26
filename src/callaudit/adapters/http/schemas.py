@@ -40,6 +40,8 @@ class HealthResponse(BaseModel):
     status: Literal["ok"]
     language_model: str
     rubric_version: str
+    persistence: str = Field(description="'postgres' o 'deshabilitada'.")
+    database: Literal["ok", "error", "no_configurada"]
 
 
 class ErrorDetail(BaseModel):

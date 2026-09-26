@@ -10,7 +10,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    llm_provider: Literal["gemini", "none"] = "gemini"
+    # "replay" is for local development only: it replays annotated facts from
+    # REPLAY_FACTS_PATH instead of calling a model.
+    llm_provider: Literal["gemini", "none", "replay"] = "gemini"
     llm_model: str = "gemini-2.5-flash"
     gemini_api_key: SecretStr | None = None
 
@@ -24,7 +26,11 @@ class Settings(BaseSettings):
     # Attempts to get facts that are consistent with the transcript.
     extraction_max_attempts: int = Field(default=2, ge=1)
 
+    replay_facts_path: Path | None = None
+
+    # Postgres (Supabase pooler in production). Unset: audits are not stored.
     database_url: SecretStr | None = None
+    database_timeout_seconds: float = Field(default=10, gt=0)
 
     # Local tooling only (tests and scripts): path to the client's dataset,
     # which is provided privately and is never versioned.
