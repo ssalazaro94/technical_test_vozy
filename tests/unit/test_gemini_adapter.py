@@ -75,7 +75,7 @@ async def test_parses_structured_json_and_sends_the_schema() -> None:
     assert config.system_instruction == "sys"
     assert config.response_mime_type == "application/json"
     assert config.response_json_schema == ConversationFacts.model_json_schema()
-    assert config.temperature == 0.0
+    assert config.temperature is None  # Gemini 3: keep the model default
 
 
 @pytest.mark.parametrize("code", [429, 500, 503])

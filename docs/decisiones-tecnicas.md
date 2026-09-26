@@ -7,7 +7,7 @@
 | Lenguaje | Python 3.12 | SDK oficial de Gemini, ecosistema de validación maduro, sintaxis de genéricos (PEP 695) para el puerto del LLM |
 | Framework HTTP | FastAPI | Validación de entrada y salida con los mismos modelos Pydantic, OpenAPI y Swagger generados automáticamente, soporte async nativo |
 | Validación | Pydantic v2 | La salida se valida por construcción: un `no_cumple` sin cita o un campo de más no se pueden serializar |
-| LLM | Gemini 2.5 Flash (tier gratuito) | Costo cero, salida JSON restringida por esquema, buena relación calidad y latencia para extracción |
+| LLM | Gemini 3.8 Flash (tier gratuito) | Costo cero, salida JSON restringida por esquema, modelo Flash estable vigente (Google retiró Gemini 2.5 Flash para cuentas nuevas) |
 | Entorno | uv + `pyproject.toml` + `uv.lock` | Instalación reproducible y rápida |
 | Calidad | pytest, ruff, mypy en modo estricto | Tests sin red, lint y tipado estático en todo el código |
 | Persistencia | Postgres en Supabase, con SQLAlchemy async y asyncpg | SQL estándar sin acoplarse al SDK de Supabase: cambiar de proveedor es cambiar `DATABASE_URL` |
@@ -95,7 +95,7 @@ Además, un limitador de ritmo del lado del cliente separa las llamadas (10 por 
 - **Validación con una sola anotación.** La evaluación de referencia la hizo una sola persona sobre 20 conversaciones. Es suficiente para detectar regresiones, no para estimar la precisión con intervalos de confianza estrechos.
 - **Formatos de fecha y monto no cubiertos.** Fechas con el día en palabras ("quince de septiembre") o montos con decimales ("1,5 millones") no se reconocen. En esos casos el criterio falla por "no mencionó la fecha" o compara contra otro valor. Todas las formas presentes en el dataset están cubiertas por tests.
 - **Transcripción como verdad.** Se asume que la transcripción es correcta; los errores del reconocimiento de voz se trasladan a la evaluación.
-- **No determinismo residual.** Aun con `temperature=0`, el modelo puede variar entre ejecuciones en casos ambiguos. Los criterios de código no varían.
+- **No determinismo residual.** Se usa la temperatura por defecto del modelo, porque Google desaconseja bajarla en Gemini 3. En casos ambiguos, el modelo puede variar entre ejecuciones. Los criterios de código no varían, y la validación de turnos contra la transcripción acota el margen de error.
 - **Lote síncrono.** Evaluar 20 conversaciones respetando 10 llamadas por minuto toma unos 2 minutos en una sola petición HTTP. Para volúmenes mayores convendría un procesamiento asíncrono con cola.
 - **Sin autenticación.** La API es pública, como pide el ejercicio; en producción requeriría autenticación y límites por cliente.
 - **Pausa de la base gratuita.** Supabase pausa los proyectos gratuitos tras una semana sin actividad. Auditar sigue funcionando (con `persisted: false`), pero las consultas de auditorías guardadas responden 503 hasta reactivar el proyecto.

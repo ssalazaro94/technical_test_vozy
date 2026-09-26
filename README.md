@@ -121,13 +121,13 @@ docker compose exec db psql -U postgres -c "select conversation_id, severity, sc
 
 #### Probar con el modelo real en el mismo stack
 
-El contenedor de la API toma `LLM_PROVIDER` y `GEMINI_API_KEY` del `.env`. Para usar el modelo real se define `LLM_PROVIDER=gemini` (y la clave) en `.env`, y se recrea solo la API (la base y sus datos se conservan):
+El contenedor de la API toma `LLM_PROVIDER`, `LLM_MODEL` y `GEMINI_API_KEY` del `.env`. Para usar el modelo real se define `LLM_PROVIDER=gemini` (y la clave) en `.env`, y se recrea solo la API (la base y sus datos se conservan):
 
 ```bash
 docker compose up -d api
 ```
 
-Con `LLM_PROVIDER=gemini` cada auditoría consume cuota del modelo. Para volver a probar sin cuota: `LLM_PROVIDER=replay` en `.env` y de nuevo `docker compose up -d api`. `/health` indica el proveedor activo. La clave llega al contenedor por interpolación desde `.env`: no se escribe en `compose.yaml` ni queda dentro de la imagen.
+Con `LLM_PROVIDER=gemini` cada auditoría consume cuota del modelo. Para volver a probar sin cuota: `LLM_PROVIDER=replay` en `.env` y de nuevo `docker compose up -d api`. `/health` indica el proveedor y el modelo activos. La clave llega al contenedor por interpolación desde `.env`: no se escribe en `compose.yaml` ni queda dentro de la imagen.
 
 ### Opción B: servicio directo con uv
 
@@ -174,7 +174,7 @@ Compara los hechos extraídos por el modelo con la anotación manual y reporta e
 | Variable | Por defecto | Descripción |
 |---|---|---|
 | `LLM_PROVIDER` | `gemini` | `gemini`, `none` (solo criterios de código) o `replay` (solo desarrollo) |
-| `LLM_MODEL` | `gemini-2.5-flash` | Modelo de Gemini |
+| `LLM_MODEL` | `gemini-3.8-flash` | Modelo de Gemini |
 | `GEMINI_API_KEY` | vacío | Clave de Google AI Studio |
 | `LLM_MAX_CONCURRENCY` | `4` | Llamadas simultáneas al LLM |
 | `LLM_REQUESTS_PER_MINUTE` | `10` | Ritmo máximo de llamadas (límite del tier gratuito) |

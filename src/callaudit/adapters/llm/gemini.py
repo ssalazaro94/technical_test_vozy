@@ -85,7 +85,9 @@ class GeminiLanguageModel:
             # additionalProperties=false), not the SDK's reduced conversion:
             # the contract Gemini sees is the one Pydantic validates.
             response_json_schema=schema.model_json_schema(),
-            temperature=0.0,
+            # No temperature: Gemini 3 models are tuned for the default (1.0), and
+            # Google warns that lower values can cause looping or degraded output.
+            # Consistency comes from the schema and from code-issued verdicts.
         )
         text = await self._call_with_retries(user_prompt, config)
         return self._parse(text, schema)

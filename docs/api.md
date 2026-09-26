@@ -142,7 +142,7 @@ Respuesta:
   "run_id": "5f0c...",
   "generated_at": "2026-09-25T20:15:03Z",
   "rubric_version": "2026-09-25",
-  "model": "gemini-2.5-flash",
+  "model": "gemini-3.8-flash",
   "report": {
     "total_conversations": 20,
     "fully_analyzed": 20,
@@ -197,7 +197,7 @@ Una falla del modelo de lenguaje o de la base de datos al **auditar** no es un e
 `GET /health` responde siempre 200 mientras el proceso está vivo:
 
 ```json
-{"status": "ok", "language_model": "gemini-2.5-flash", "rubric_version": "2026-09-25", "persistence": "postgres", "database": "ok"}
+{"status": "ok", "language_model": "gemini-3.8-flash", "rubric_version": "2026-09-25", "persistence": "postgres", "database": "ok"}
 ```
 
 `database` vale `ok`, `error` (la base no respondió en 3 segundos) o `no_configurada`.

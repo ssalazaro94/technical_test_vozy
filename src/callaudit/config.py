@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     # "replay" is for local development only: it replays annotated facts from
     # REPLAY_FACTS_PATH instead of calling a model.
     llm_provider: Literal["gemini", "none", "replay"] = "gemini"
-    llm_model: str = "gemini-2.5-flash"
+    llm_model: str = "gemini-3.8-flash"
     gemini_api_key: SecretStr | None = None
 
     # Free tier guard rails: requests in flight, requests per minute and
