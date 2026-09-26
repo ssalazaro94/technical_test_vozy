@@ -9,6 +9,7 @@ from fastapi import APIRouter, Body, Depends, File, HTTPException, Request, Uplo
 from fastapi.responses import RedirectResponse
 from pydantic import ValidationError
 
+from callaudit.adapters.http.client_limits import ClientRateLimiter
 from callaudit.adapters.http.examples import (
     CONVERSATION_REQUEST_EXAMPLES,
     DATASET_REQUEST_EXAMPLES,
@@ -49,6 +50,7 @@ _READ_ERRORS: dict[int | str, dict[str, Any]] = {
 _ERRORS: dict[int | str, dict[str, Any]] = {
     status.HTTP_413_CONTENT_TOO_LARGE: {"model": ErrorResponse},
     status.HTTP_422_UNPROCESSABLE_CONTENT: {"model": ErrorResponse},
+    status.HTTP_429_TOO_MANY_REQUESTS: {"model": ErrorResponse},
 }
 
 
@@ -74,6 +76,25 @@ def get_audit_service(request: Request) -> AuditService:
 
 
 Service = Annotated[AuditService, Depends(get_audit_service)]
+
+
+async def enforce_client_limit(request: Request) -> None:
+    """Per-client request limit on the audit routes (see client_limits)."""
+    limiter: ClientRateLimiter | None = request.app.state.client_limiter
+    if limiter is None:
+        return
+    client = request.client.host if request.client else "desconocido"
+    wait = limiter.check(client)
+    if wait is not None:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Demasiadas solicitudes de auditoría desde este cliente; intente de nuevo en "
+            f"{wait} segundos.",
+            headers={"Retry-After": str(wait)},
+        )
+
+
+_AUDIT_LIMIT = [Depends(enforce_client_limit)]
 
 router = APIRouter()
 
@@ -126,6 +147,7 @@ async def rubric() -> RubricResponse:
 
 @router.post(
     "/v1/audits",
+    dependencies=_AUDIT_LIMIT,
     tags=["auditorías"],
     summary="Auditar una conversación",
     responses=_ERRORS,
@@ -150,6 +172,7 @@ def _check_size(dataset: Dataset) -> None:
 
 @router.post(
     "/v1/audits/dataset",
+    dependencies=_AUDIT_LIMIT,
     tags=["auditorías"],
     summary="Auditar varias conversaciones (JSON en el cuerpo)",
     description="Recibe `{conversaciones: [ ... ]}` y devuelve la auditoría de cada "
@@ -181,6 +204,7 @@ async def _read_upload(file: UploadFile) -> Any:
 
 @router.post(
     "/v1/audits/file",
+    dependencies=_AUDIT_LIMIT,
     tags=["auditorías"],
     summary="Auditar una conversación (subida de archivo)",
     description="Recibe un archivo .json con una sola conversación, en cualquiera de dos formas: "
@@ -214,6 +238,7 @@ async def audit_one_file(
 
 @router.post(
     "/v1/audits/dataset/file",
+    dependencies=_AUDIT_LIMIT,
     tags=["auditorías"],
     summary="Auditar varias conversaciones (subida de archivo)",
     description="Igual que /v1/audits/dataset, pero recibe el archivo .json como subida "

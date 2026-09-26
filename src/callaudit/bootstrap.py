@@ -2,20 +2,29 @@
 
 import logging
 
+from sqlalchemy.ext.asyncio import AsyncEngine
+
 from callaudit.adapters.facts.replay import ReplayFactSource
 from callaudit.adapters.llm.disabled import DisabledLanguageModel
 from callaudit.adapters.llm.gemini import GeminiLanguageModel, RetryPolicy
 from callaudit.adapters.llm.rate_limit import MinIntervalRateLimiter
-from callaudit.adapters.persistence.null import NullAuditRepository
+from callaudit.adapters.persistence.null import InMemoryUsageCounter, NullAuditRepository
 from callaudit.adapters.persistence.postgres import (
     PostgresAuditRepository,
     PostgresFactCache,
+    PostgresUsageCounter,
     create_engine,
 )
 from callaudit.application.audit_service import AuditService
+from callaudit.application.budget import DailyCallBudget
 from callaudit.application.fact_cache import CachedFactSource
 from callaudit.application.fact_extraction import FactExtractor
-from callaudit.application.ports import AuditRepository, FactSource, StructuredLanguageModel
+from callaudit.application.ports import (
+    AuditRepository,
+    FactSource,
+    StructuredLanguageModel,
+    UsageCounter,
+)
 from callaudit.config import Settings
 
 logger = logging.getLogger(__name__)
@@ -41,7 +50,7 @@ def build_language_model(settings: Settings) -> StructuredLanguageModel:
     )
 
 
-def build_fact_source(settings: Settings) -> FactSource:
+def build_fact_source(settings: Settings, engine: AsyncEngine | None = None) -> FactSource:
     if settings.llm_provider == "replay":
         if settings.replay_facts_path is None:
             raise ValueError("LLM_PROVIDER=replay requires REPLAY_FACTS_PATH")
@@ -49,9 +58,14 @@ def build_fact_source(settings: Settings) -> FactSource:
             "replaying annotated facts from %s: development only", settings.replay_facts_path
         )
         return ReplayFactSource(settings.replay_facts_path)
-    return FactExtractor(
-        build_language_model(settings), max_attempts=settings.extraction_max_attempts
-    )
+    llm = build_language_model(settings)
+    if settings.llm_daily_call_budget is not None:
+        # Counted in the database so restarts do not reset it; without one, per process.
+        counter: UsageCounter = (
+            PostgresUsageCounter(engine) if engine is not None else InMemoryUsageCounter()
+        )
+        llm = DailyCallBudget(llm, counter, daily_limit=settings.llm_daily_call_budget)
+    return FactExtractor(llm, max_attempts=settings.extraction_max_attempts)
 
 
 def build_audit_service(settings: Settings) -> AuditService:
@@ -70,7 +84,7 @@ def build_audit_service(settings: Settings) -> AuditService:
     else:
         repository = PostgresAuditRepository(engine)
 
-    facts = build_fact_source(settings)
+    facts = build_fact_source(settings, engine)
     # The cache wraps the model extractor even without a key or quota: a
     # conversation analysed before still gets a complete audit.
     if isinstance(facts, FactExtractor) and settings.facts_cache_enabled and engine is not None:

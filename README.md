@@ -221,4 +221,6 @@ Reporta además cuántas conversaciones coinciden exactamente y cuántas tienen 
 | `DATABASE_URL` | vacío | Postgres (`postgresql+asyncpg://...`); sin ella no se guardan auditorías |
 | `DATABASE_TIMEOUT_SECONDS` | `10` | Tiempo máximo de conexión y de consulta |
 | `FACTS_CACHE_ENABLED` | `true` | Reutilizar la extracción del modelo para conversaciones idénticas (requiere `DATABASE_URL`) |
+| `LLM_DAILY_CALL_BUDGET` | vacío | Máximo de llamadas al modelo por día UTC, contadas en la base; vacío = sin tope |
+| `CLIENT_REQUESTS_PER_HOUR` | `30` | Solicitudes de auditoría por hora por IP de cliente; vacío = sin límite |
 | `LOCAL_DATASET_PATH` | vacío | Solo tests y scripts locales: ruta al archivo de conversaciones |

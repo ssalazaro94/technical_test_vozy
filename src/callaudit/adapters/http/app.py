@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from callaudit.adapters.http.client_limits import ClientRateLimiter
 from callaudit.adapters.http.errors import register_error_handlers
 from callaudit.adapters.http.routes import router
 from callaudit.application.audit_service import AuditService
@@ -31,10 +32,21 @@ y **GET /v1/reports/{run_id}**.
 """
 
 
-def create_app(service: AuditService | None = None, settings: Settings | None = None) -> FastAPI:
-    """Build the app. Tests inject a service; production builds it from the environment."""
+def create_app(
+    service: AuditService | None = None,
+    settings: Settings | None = None,
+    client_limiter: ClientRateLimiter | None = None,
+) -> FastAPI:
+    """Build the app. Tests inject a service; production builds it from the environment.
+
+    The per-client limit comes from the settings when the app builds its own
+    service; an injected service gets only the limiter passed explicitly.
+    """
     if service is None:
-        service = build_audit_service(settings or Settings())
+        settings = settings or Settings()
+        service = build_audit_service(settings)
+        if client_limiter is None and settings.client_requests_per_hour is not None:
+            client_limiter = ClientRateLimiter(settings.client_requests_per_hour)
     audit_service = service
 
     @asynccontextmanager
@@ -50,6 +62,7 @@ def create_app(service: AuditService | None = None, settings: Settings | None = 
         lifespan=lifespan,
     )
     app.state.audit_service = service
+    app.state.client_limiter = client_limiter
     app.include_router(router)
     register_error_handlers(app)
     return app

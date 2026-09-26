@@ -7,6 +7,7 @@ the table queryable with plain SQL without parsing JSON.
 
 from collections.abc import AsyncIterator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from datetime import date
 from typing import Any
 from uuid import UUID
 
@@ -74,6 +75,14 @@ fact_cache = Table(
     Column("cache_key", Text, primary_key=True),
     Column("model", Text, nullable=False),
     Column("facts", JSONB, nullable=False),
+)
+
+
+llm_daily_usage = Table(
+    "llm_daily_usage",
+    metadata,
+    Column("day", Date, primary_key=True),
+    Column("calls", Integer, nullable=False),
 )
 
 
@@ -238,3 +247,24 @@ class PostgresFactCache:
         )
         async with _transaction(self._engine) as connection:
             await connection.execute(statement)
+
+
+class PostgresUsageCounter:
+    """Atomic per-day counter: concurrent increments never lose a call."""
+
+    def __init__(self, engine: AsyncEngine) -> None:
+        self._engine = engine
+
+    async def increment(self, day: date) -> int:
+        statement = (
+            pg_insert(llm_daily_usage)
+            .values(day=day, calls=1)
+            .on_conflict_do_update(
+                index_elements=[llm_daily_usage.c.day],
+                set_={"calls": llm_daily_usage.c.calls + 1},
+            )
+            .returning(llm_daily_usage.c.calls)
+        )
+        async with _transaction(self._engine) as connection:
+            calls: int = (await connection.execute(statement)).scalar_one()
+        return calls

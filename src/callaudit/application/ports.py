@@ -5,6 +5,7 @@ domain and the use cases never import a vendor SDK.
 """
 
 from dataclasses import dataclass
+from datetime import date
 from typing import Protocol
 from uuid import UUID
 
@@ -79,6 +80,14 @@ class FactCache(Protocol):
 
     async def put(self, key: str, model: str, facts: ConversationFacts) -> None:
         """Store the facts; an existing key is left untouched."""
+        ...
+
+
+class UsageCounter(Protocol):
+    """Counts language model calls per day, shared by every instance of the service."""
+
+    async def increment(self, day: date) -> int:
+        """Add one call to the day and return the new total; raise on storage failure."""
         ...
 
 

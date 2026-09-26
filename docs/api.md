@@ -189,11 +189,12 @@ Todos los errores usan la misma forma:
 | 405 | `metodo_no_permitido` | Método HTTP no soportado en la ruta |
 | 413 | `demasiado_grande` | Archivo mayor a 2 MB o más de 100 conversaciones |
 | 422 | `entrada_invalida` | El cuerpo JSON no cumple el formato |
+| 429 | `demasiadas_solicitudes` | Se superó el límite de solicitudes de auditoría por hora de este cliente; el encabezado `Retry-After` indica cuántos segundos esperar |
 | 422 | `archivo_invalido` | El archivo no es JSON, no tiene el formato esperado o (en `/v1/audits/file`) trae más de una conversación |
 | 500 | `error_interno` | Error inesperado; el detalle queda en el log del servidor |
 | 503 | `persistencia_no_disponible` | Consulta de una auditoría o ejecución sin base configurada, o con la base caída |
 
-Cuando se agota la cuota diaria del modelo, el aviso lo dice explícitamente ("cuota diaria de Gemini agotada; se renueva a la medianoche del Pacífico...") y el servicio deja de llamar al modelo hasta la renovación; las conversaciones ya analizadas siguen saliendo completas desde el caché de hechos.
+Cuando se agota el presupuesto diario de llamadas al modelo que fija el propio servicio, el aviso lo indica igual ("presupuesto diario del servicio agotado..."). Cuando se agota la cuota diaria del modelo, el aviso lo dice explícitamente ("cuota diaria de Gemini agotada; se renueva a la medianoche del Pacífico...") y el servicio deja de llamar al modelo hasta la renovación; las conversaciones ya analizadas siguen saliendo completas desde el caché de hechos.
 
 Una falla del modelo de lenguaje o de la base de datos al **auditar** no es un error HTTP: se responde 200 con la auditoría (en modo `parcial` si falló el modelo, con `persisted: false` si falló la base) y la causa en `warnings`.
 

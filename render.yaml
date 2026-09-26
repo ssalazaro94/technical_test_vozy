@@ -29,6 +29,13 @@ services:
         value: "4"
       - key: LLM_MAX_CONCURRENCY
         value: "2"
+      # Spending guards for a public API with a paid key: at most 100 model calls
+      # per UTC day (about USD 1.1 with gemini-3.8-flash) and 30 audit requests
+      # per hour per client IP.
+      - key: LLM_DAILY_CALL_BUDGET
+        value: "100"
+      - key: CLIENT_REQUESTS_PER_HOUR
+        value: "30"
       - key: GEMINI_API_KEY
         sync: false
       # Supabase pooler, session mode (port 5432): the free plan only has

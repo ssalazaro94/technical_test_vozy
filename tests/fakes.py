@@ -3,6 +3,7 @@
 import asyncio
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
+from datetime import date
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -167,3 +168,10 @@ class BrokenFactCache(InMemoryFactCache):
 
     async def put(self, key: str, model: str, facts: ConversationFacts) -> None:
         raise PersistenceError("connection refused")
+
+
+class BrokenUsageCounter:
+    """The daily usage counter's database is down."""
+
+    async def increment(self, day: date) -> int:
+        raise ConnectionError("database down")

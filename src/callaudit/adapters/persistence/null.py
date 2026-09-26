@@ -1,5 +1,6 @@
 """Repository used when no database is configured."""
 
+from datetime import date
 from uuid import UUID
 
 from callaudit.application.models import DatasetAudit
@@ -50,3 +51,14 @@ class NullFactCache:
 
     async def put(self, key: str, model: str, facts: ConversationFacts) -> None:
         return None
+
+
+class InMemoryUsageCounter:
+    """Per-process counter for runs without a database (it resets on restart)."""
+
+    def __init__(self) -> None:
+        self._calls: dict[date, int] = {}
+
+    async def increment(self, day: date) -> int:
+        self._calls[day] = self._calls.get(day, 0) + 1
+        return self._calls[day]

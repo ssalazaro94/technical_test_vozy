@@ -33,6 +33,12 @@ class Settings(BaseSettings):
     database_url: SecretStr | None = None
     database_timeout_seconds: float = Field(default=10, gt=0)
 
+    # Spending guards for a public API with a paid model. The daily budget is the
+    # hard cap on model calls (UTC day, counted in the database); unset = no cap.
+    # The per-client limit applies to the audit routes; unset = no limit.
+    llm_daily_call_budget: int | None = Field(default=None, ge=0)
+    client_requests_per_hour: int | None = Field(default=30, ge=1)
+
     # Reuse the model's extraction of an identical conversation (needs a
     # database). Any change to the conversation, rules, prompt or model misses.
     facts_cache_enabled: bool = True

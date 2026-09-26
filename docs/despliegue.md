@@ -36,6 +36,8 @@ El servicio está descrito en [`render.yaml`](../render.yaml) (Blueprint de Rend
 | `LLM_MODEL` | `gemini-3.8-flash` | `render.yaml` |
 | `LLM_REQUESTS_PER_MINUTE` | `4` | `render.yaml` |
 | `LLM_MAX_CONCURRENCY` | `2` | `render.yaml` |
+| `LLM_DAILY_CALL_BUDGET` | `100` | `render.yaml` |
+| `CLIENT_REQUESTS_PER_HOUR` | `30` | `render.yaml` |
 | `GEMINI_API_KEY` | Secreto | Panel de Render (`sync: false` en el Blueprint) |
 | `DATABASE_URL` | Secreto: `postgresql+asyncpg://postgres.<ref>:<clave>@aws-0-us-east-1.pooler.supabase.com:5432/postgres` | Panel de Render (`sync: false`) |
 
@@ -65,6 +67,16 @@ Cómo los respeta el servicio:
 - **Ritmo:** 4 llamadas por minuto y 2 simultáneas, por debajo del límite.
 - **Cuota diaria agotada:** se detecta en el detalle estructurado del error (`QuotaFailure` diaria). El servicio no reintenta y no vuelve a llamar al modelo hasta la renovación (Google cuenta también las peticiones rechazadas). Las conversaciones afectadas salen como `parcial` con la causa.
 - **Caché de hechos:** una conversación idéntica a una ya analizada no llama al modelo. Auditar de nuevo el archivo de la prueba es instantáneo y no consume cuota; una conversación nueva o modificada sí la consume.
+
+## Protección del gasto
+
+La API es pública y sin autenticación, y la clave del modelo puede estar en el tier de pago. Tres capas limitan el gasto:
+
+1. **Presupuesto diario del servicio (`LLM_DAILY_CALL_BUDGET=100`).** Antes de cada llamada al modelo, el servicio suma 1 a un contador por día UTC guardado en Postgres (`callaudit.llm_daily_usage`, incremento atómico con `insert ... on conflict do update ... returning`). Por encima del tope no llama al modelo: la conversación sale como `parcial` con el aviso. Vive en la base porque el plan gratuito reinicia el servicio al dormirlo y un contador en memoria se perdería. Si la base no responde, **no se llama al modelo** (falla cerrado). Con `gemini-3.8-flash`, 100 llamadas son unos USD 1,1 por día como máximo.
+2. **Límite por cliente (`CLIENT_REQUESTS_PER_HOUR=30`).** Ventana deslizante por IP en las rutas `POST` de auditoría; responde 429 con `Retry-After`. Evita que un solo cliente consuma el presupuesto del día. Está en memoria y la IP reenviada puede falsearse, por eso no es la garantía de gasto (esa es la capa 1).
+3. **Caché de hechos.** Las conversaciones ya analizadas no llaman al modelo ni consumen presupuesto.
+
+En Google Cloud, además: una alerta de presupuesto en la cuenta de facturación y la API key restringida a la API de Gemini.
 
 ## Verificación después de un despliegue
 

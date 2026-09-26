@@ -70,6 +70,8 @@ Beneficios de esta división:
 | Entrada inválida | HTTP 422 con la ubicación exacta de cada error |
 | Archivo o lote demasiado grande | HTTP 413 (máximo 2 MB y 100 conversaciones por ejecución) |
 | Error inesperado | HTTP 500 con un mensaje genérico; el detalle solo va al log del servidor |
+| Presupuesto diario del servicio agotado (`LLM_DAILY_CALL_BUDGET`) | No se llama al modelo; las conversaciones nuevas salen parciales con el aviso y las ya analizadas salen del caché. Si el contador no responde, tampoco se llama al modelo (falla cerrado) |
+| Demasiadas solicitudes de un cliente (`CLIENT_REQUESTS_PER_HOUR`) | HTTP 429 con `Retry-After` en las rutas de auditoría |
 
 Además, un limitador de ritmo del lado del cliente separa las llamadas (4 por minuto por defecto, bajo el límite de 5 del tier gratuito de `gemini-3.8-flash`) y un semáforo limita las llamadas simultáneas (2 por defecto).
 
@@ -109,7 +111,7 @@ Además, un limitador de ritmo del lado del cliente separa las llamadas (4 por m
 - **No determinismo residual.** Se usa la temperatura por defecto del modelo, porque Google desaconseja bajarla en Gemini 3. En casos ambiguos, el modelo puede variar entre ejecuciones. Los criterios de código no varían, y la validación de turnos contra la transcripción acota el margen de error.
 - **Lote síncrono.** Evaluar 20 conversaciones nuevas respetando 4 llamadas por minuto toma unos 5 a 7 minutos en una sola petición HTTP (desde el caché, segundos). Para volúmenes mayores convendría un procesamiento asíncrono con cola.
 - **Disponibilidad del proveedor.** El modelo puede responder 503 por alta demanda en momentos puntuales; el servicio reintenta con backoff y, si persiste, entrega esa conversación como parcial con la causa.
-- **Sin autenticación.** La API es pública, como pide el ejercicio; en producción requeriría autenticación y límites por cliente.
+- **Sin autenticación.** La API es pública, como pide el ejercicio. El gasto se acota con un presupuesto diario de llamadas al modelo y un límite por IP (ver [despliegue.md](despliegue.md)); en producción real se agregaría autenticación y límites por cliente identificado.
 - **Cuota del modelo para conversaciones nuevas.** El caché solo evita llamadas para conversaciones ya analizadas. Con el tier gratuito (20 llamadas diarias en este proyecto), un lote grande de conversaciones nuevas se completa parcialmente y requiere repetirse tras la renovación de la cuota o pasar al tier de pago.
 - **Pausa de la base gratuita.** Supabase pausa los proyectos gratuitos tras una semana sin actividad. Auditar sigue funcionando (con `persisted: false`), pero las consultas de auditorías guardadas responden 503 hasta reactivar el proyecto.
 - **Arranque en frío.** En el plan gratuito de la plataforma de despliegue, la primera petición después de un periodo sin tráfico puede tardar cerca de un minuto.

@@ -18,15 +18,22 @@ _CODES = {
     status.HTTP_404_NOT_FOUND: "no_encontrado",
     status.HTTP_405_METHOD_NOT_ALLOWED: "metodo_no_permitido",
     status.HTTP_413_CONTENT_TOO_LARGE: "demasiado_grande",
+    status.HTTP_429_TOO_MANY_REQUESTS: "demasiadas_solicitudes",
     status.HTTP_503_SERVICE_UNAVAILABLE: "persistencia_no_disponible",
 }
 
 
 def _response(
-    status_code: int, code: str, message: str, details: list[ErrorDetail]
+    status_code: int,
+    code: str,
+    message: str,
+    details: list[ErrorDetail],
+    headers: Mapping[str, str] | None = None,
 ) -> JSONResponse:
     body = ErrorResponse(error=ErrorBody(code=code, message=message, details=details))
-    return JSONResponse(status_code=status_code, content=body.model_dump(mode="json"))
+    return JSONResponse(
+        status_code=status_code, content=body.model_dump(mode="json"), headers=headers
+    )
 
 
 def _details(errors: Iterable[Mapping[str, Any]]) -> list[ErrorDetail]:
@@ -68,6 +75,7 @@ async def _http(_: Request, exc: Exception) -> JSONResponse:
         _CODES.get(exc.status_code, "error_http"),
         str(exc.detail),
         [],
+        exc.headers,  # e.g. Retry-After on 429
     )
 
 
