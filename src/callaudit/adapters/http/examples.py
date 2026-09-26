@@ -66,8 +66,12 @@ CONVERSATION_REQUEST_EXAMPLES: dict[str, Any] = {
 }
 
 DATASET_REQUEST_EXAMPLES: dict[str, Any] = {
-    "dataset_minimo": {
-        "summary": "Mismo formato que el archivo del cliente, con una conversación",
+    "solo_conversaciones": {
+        "summary": "Solo las conversaciones (se usa la especificación de Lina)",
+        "value": {"conversaciones": [SYNTHETIC_CONVERSATION]},
+    },
+    "archivo_del_cliente": {
+        "summary": "El archivo tal como lo entrega el cliente, con especificación del agente",
         "value": {
             "descripcion": "Ejemplo sintético",
             "especificacion_agente": AGENT_SPEC_EXAMPLE,

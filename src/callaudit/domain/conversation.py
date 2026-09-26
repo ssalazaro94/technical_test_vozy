@@ -60,5 +60,7 @@ class AgentSpec(_InputModel):
 
 class Dataset(_InputModel):
     description: str | None = Field(default=None, alias="descripcion")
-    agent_spec: AgentSpec = Field(alias="especificacion_agente")
+    # Optional: when absent, the service uses the specification the rubric was
+    # designed for. When present (the client's file as delivered), it feeds the prompt.
+    agent_spec: AgentSpec | None = Field(default=None, alias="especificacion_agente")
     conversations: tuple[Conversation, ...] = Field(alias="conversaciones", min_length=1)

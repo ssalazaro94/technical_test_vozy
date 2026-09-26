@@ -6,6 +6,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
+from callaudit.application.agent_spec import LINA_AGENT_SPEC
 from callaudit.application.models import DatasetAudit
 from callaudit.application.ports import AuditRepository, FactSource
 from callaudit.domain.audit import ConversationAudit
@@ -30,9 +31,11 @@ class AuditService:
         *,
         max_concurrency: int = 4,
         clock: Callable[[], datetime] = _utc_now,
+        default_spec: AgentSpec = LINA_AGENT_SPEC,
     ) -> None:
         self._facts_source = facts
         self._repository = repository
+        self._default_spec = default_spec
         self._semaphore = asyncio.Semaphore(max_concurrency)
         self._clock = clock
 
@@ -68,9 +71,9 @@ class AuditService:
         return audit_conversation(conversation, facts, warnings=warnings)
 
     async def audit_conversation(
-        self, conversation: Conversation, spec: AgentSpec
+        self, conversation: Conversation, spec: AgentSpec | None = None
     ) -> ConversationAudit:
-        audit = await self._audit(conversation, spec)
+        audit = await self._audit(conversation, spec or self._default_spec)
         try:
             await self._repository.save_audit(audit)
         except Exception as exc:
@@ -82,11 +85,9 @@ class AuditService:
         return audit.model_copy(update={"persisted": self._repository.enabled})
 
     async def audit_dataset(self, dataset: Dataset) -> DatasetAudit:
+        spec = dataset.agent_spec or self._default_spec
         audits = await asyncio.gather(
-            *(
-                self._audit(conversation, dataset.agent_spec)
-                for conversation in dataset.conversations
-            )
+            *(self._audit(conversation, spec) for conversation in dataset.conversations)
         )
         run = DatasetAudit(
             run_id=uuid4(),

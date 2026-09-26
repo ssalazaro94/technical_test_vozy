@@ -1,6 +1,7 @@
 """HTTP routes. Thin: parse, delegate to the application service, return domain models."""
 
 import asyncio
+import json
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
@@ -19,12 +20,11 @@ from callaudit.adapters.http.schemas import (
     HealthResponse,
     RubricResponse,
 )
-from callaudit.application.agent_spec import LINA_AGENT_SPEC
 from callaudit.application.audit_service import AuditService
 from callaudit.application.models import DatasetAudit
 from callaudit.application.ports import PersistenceError, PersistenceUnavailableError
 from callaudit.domain.audit import ConversationAudit, Severity
-from callaudit.domain.conversation import Dataset
+from callaudit.domain.conversation import Conversation, Dataset
 from callaudit.domain.criteria import RUBRIC, RUBRIC_VERSION
 
 # Guard rails for a free-tier deployment: one dataset run is bounded in size.
@@ -39,6 +39,8 @@ SCORING_RULE = (
 
 HEALTH_DB_TIMEOUT_SECONDS = 3
 
+_INVALID_FORMAT = "El archivo no tiene el formato esperado."
+
 _READ_ERRORS: dict[int | str, dict[str, Any]] = {
     status.HTTP_404_NOT_FOUND: {"model": ErrorResponse},
     status.HTTP_503_SERVICE_UNAVAILABLE: {"model": ErrorResponse},
@@ -50,12 +52,20 @@ _ERRORS: dict[int | str, dict[str, Any]] = {
 }
 
 
-class DatasetFileError(Exception):
-    """An uploaded file that is not valid JSON or does not match the dataset format."""
+class UploadedFileError(Exception):
+    """An uploaded file that is not valid JSON or does not have the expected shape."""
 
-    def __init__(self, error: ValidationError) -> None:
-        super().__init__(str(error))
-        self.error = error
+    def __init__(self, message: str, details: list[tuple[str, str]] | None = None) -> None:
+        super().__init__(message)
+        self.message = message
+        self.details = details or []
+
+    @classmethod
+    def from_validation(cls, message: str, error: ValidationError) -> "UploadedFileError":
+        return cls(
+            message,
+            [(".".join(str(part) for part in e["loc"]), e["msg"]) for e in error.errors()],
+        )
 
 
 def get_audit_service(request: Request) -> AuditService:
@@ -126,9 +136,7 @@ async def audit_one(
         ConversationAuditRequest, Body(openapi_examples=CONVERSATION_REQUEST_EXAMPLES)
     ],
 ) -> ConversationAudit:
-    return await service.audit_conversation(
-        payload.conversation, payload.agent_spec or LINA_AGENT_SPEC
-    )
+    return await service.audit_conversation(payload.conversation, payload.agent_spec)
 
 
 def _check_size(dataset: Dataset) -> None:
@@ -143,9 +151,10 @@ def _check_size(dataset: Dataset) -> None:
 @router.post(
     "/v1/audits/dataset",
     tags=["auditorías"],
-    summary="Auditar un dataset completo (JSON en el cuerpo)",
-    description="Recibe el archivo con el mismo formato que entrega el cliente y devuelve la "
-    "auditoría de cada conversación más el reporte agregado.",
+    summary="Auditar varias conversaciones (JSON en el cuerpo)",
+    description="Recibe `{conversaciones: [ ... ]}` y devuelve la auditoría de cada "
+    "conversación más el reporte agregado. `especificacion_agente` y `descripcion` son "
+    "opcionales, de modo que también se acepta el archivo del cliente tal como se entrega.",
     responses=_ERRORS,
 )
 async def audit_dataset(
@@ -156,18 +165,8 @@ async def audit_dataset(
     return await service.audit_dataset(dataset)
 
 
-@router.post(
-    "/v1/audits/dataset/file",
-    tags=["auditorías"],
-    summary="Auditar un dataset completo (subida de archivo)",
-    description="Igual que /v1/audits/dataset, pero recibe el archivo .json como subida "
-    "multipart. Pensado para usarlo directamente desde esta página.",
-    responses=_ERRORS,
-)
-async def audit_dataset_file(
-    service: Service,
-    file: Annotated[UploadFile, File(description="Archivo JSON del dataset.")],
-) -> DatasetAudit:
+async def _read_upload(file: UploadFile) -> Any:
+    """Read an uploaded JSON file with a size cap, without loading more than the limit."""
     raw = await file.read(MAX_UPLOAD_BYTES + 1)
     if len(raw) > MAX_UPLOAD_BYTES:
         raise HTTPException(
@@ -175,10 +174,62 @@ async def audit_dataset_file(
             detail=f"El archivo supera el máximo de {MAX_UPLOAD_BYTES // (1024 * 1024)} MB.",
         )
     try:
-        dataset = Dataset.model_validate_json(raw)
+        return json.loads(raw)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise UploadedFileError("El archivo no es un JSON válido.", [("file", str(exc))]) from exc
+
+
+@router.post(
+    "/v1/audits/file",
+    tags=["auditorías"],
+    summary="Auditar una conversación (subida de archivo)",
+    description="Recibe un archivo .json con una sola conversación, en cualquiera de dos formas: "
+    "la conversación sola (`{id, fecha_llamada, datos_cliente, transcripcion}`) o la misma "
+    "estructura del lote con una única conversación (`{conversaciones: [ ... ]}`). "
+    "La especificación del agente es opcional; si no viene, se usa la de Lina.",
+    responses=_ERRORS,
+)
+async def audit_one_file(
+    service: Service,
+    file: Annotated[UploadFile, File(description="Archivo JSON con una conversación.")],
+) -> ConversationAudit:
+    data = await _read_upload(file)
+    if isinstance(data, dict) and "conversaciones" in data:
+        try:
+            dataset = Dataset.model_validate(data)
+        except ValidationError as exc:
+            raise UploadedFileError.from_validation(_INVALID_FORMAT, exc) from exc
+        if len(dataset.conversations) != 1:
+            raise UploadedFileError(
+                f"El archivo trae {len(dataset.conversations)} conversaciones; esta ruta audita "
+                "una sola. Para varias, use POST /v1/audits/dataset/file."
+            )
+        return await service.audit_conversation(dataset.conversations[0], dataset.agent_spec)
+    try:
+        conversation = Conversation.model_validate(data)
     except ValidationError as exc:
-        # Re-raised as the same 422 shape a JSON body would produce.
-        raise DatasetFileError(exc) from exc
+        raise UploadedFileError.from_validation(_INVALID_FORMAT, exc) from exc
+    return await service.audit_conversation(conversation)
+
+
+@router.post(
+    "/v1/audits/dataset/file",
+    tags=["auditorías"],
+    summary="Auditar varias conversaciones (subida de archivo)",
+    description="Igual que /v1/audits/dataset, pero recibe el archivo .json como subida "
+    "multipart: `{conversaciones: [ ... ]}`, o el archivo del cliente tal como se entrega "
+    "(con `descripcion` y `especificacion_agente`). Pensado para usarlo desde esta página.",
+    responses=_ERRORS,
+)
+async def audit_dataset_file(
+    service: Service,
+    file: Annotated[UploadFile, File(description="Archivo JSON con las conversaciones.")],
+) -> DatasetAudit:
+    data = await _read_upload(file)
+    try:
+        dataset = Dataset.model_validate(data)
+    except ValidationError as exc:
+        raise UploadedFileError.from_validation(_INVALID_FORMAT, exc) from exc
     _check_size(dataset)
     return await service.audit_dataset(dataset)
 

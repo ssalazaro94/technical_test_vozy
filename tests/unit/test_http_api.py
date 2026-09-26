@@ -201,15 +201,92 @@ class TestErrors:
 
 async def test_swagger_examples_are_valid_requests() -> None:
     app = create_app(settings=Settings(_env_file=None, llm_provider="none"))
-    schema = app.openapi()
-    examples = schema["paths"]["/v1/audits"]["post"]["requestBody"]["content"]["application/json"][
-        "examples"
-    ]
+    paths = app.openapi()["paths"]
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        for example in examples.values():
-            response = await client.post("/v1/audits", json=example["value"])
-            assert response.status_code == 200, response.text
+        for route in ("/v1/audits", "/v1/audits/dataset"):
+            content = paths[route]["post"]["requestBody"]["content"]["application/json"]
+            for example in content["examples"].values():
+                response = await client.post(route, json=example["value"])
+                assert response.status_code == 200, (route, response.text)
+
+
+def _upload(name: str, payload: Any) -> dict[str, tuple[str, bytes, str]]:
+    return {"file": (name, json.dumps(payload, ensure_ascii=False).encode(), "application/json")}
+
+
+class TestOptionalSpecification:
+    async def test_dataset_body_without_specification(
+        self, client: httpx.AsyncClient, dataset: Dataset
+    ) -> None:
+        payload = {"conversaciones": _dataset_json(dataset)["conversaciones"]}
+
+        response = await client.post("/v1/audits/dataset", json=payload)
+
+        assert response.status_code == 200
+        assert len(response.json()["audits"]) == 20
+
+    async def test_dataset_file_without_specification(
+        self, client: httpx.AsyncClient, dataset: Dataset
+    ) -> None:
+        payload = {"conversaciones": _dataset_json(dataset)["conversaciones"]}
+
+        response = await client.post("/v1/audits/dataset/file", files=_upload("d.json", payload))
+
+        assert response.status_code == 200
+        assert response.json()["report"]["total_conversations"] == 20
+
+
+class TestSingleConversationFile:
+    async def test_accepts_the_conversation_alone(
+        self, client: httpx.AsyncClient, conversations: dict[str, Conversation]
+    ) -> None:
+        payload = conversations["C20"].model_dump(mode="json", by_alias=True)
+
+        response = await client.post("/v1/audits/file", files=_upload("c20.json", payload))
+
+        assert response.status_code == 200
+        assert response.json()["failed_criteria"] == ["R2.c"]
+
+    async def test_accepts_the_batch_shape_with_one_conversation(
+        self, client: httpx.AsyncClient, conversations: dict[str, Conversation]
+    ) -> None:
+        payload = {"conversaciones": [conversations["C05"].model_dump(mode="json", by_alias=True)]}
+
+        response = await client.post("/v1/audits/file", files=_upload("c05.json", payload))
+
+        assert response.status_code == 200
+        assert response.json()["failed_criteria"] == ["R6.a", "R6.b"]
+
+    async def test_rejects_more_than_one_conversation(
+        self, client: httpx.AsyncClient, dataset: Dataset
+    ) -> None:
+        payload = {"conversaciones": _dataset_json(dataset)["conversaciones"][:2]}
+
+        response = await client.post("/v1/audits/file", files=_upload("two.json", payload))
+
+        assert response.status_code == 422
+        error = response.json()["error"]
+        assert error["code"] == "archivo_invalido"
+        assert "trae 2 conversaciones" in error["message"]
+        assert "/v1/audits/dataset/file" in error["message"]
+
+    async def test_reports_where_the_format_is_wrong(self, client: httpx.AsyncClient) -> None:
+        payload = {"id": "X", "fecha_llamada": "2026-09-22"}
+
+        response = await client.post("/v1/audits/file", files=_upload("bad.json", payload))
+
+        assert response.status_code == 422
+        locations = {d["location"] for d in response.json()["error"]["details"]}
+        assert {"datos_cliente", "transcripcion"} <= locations
+
+    async def test_rejects_a_file_that_is_not_json(self, client: httpx.AsyncClient) -> None:
+        response = await client.post(
+            "/v1/audits/file", files={"file": ("x.json", b"no es json", "application/json")}
+        )
+
+        assert response.status_code == 422
+        assert response.json()["error"]["message"] == "El archivo no es un JSON válido."
 
 
 class TestReadEndpoints:

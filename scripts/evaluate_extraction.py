@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from callaudit.adapters.llm.disabled import DisabledLanguageModel
+from callaudit.application.agent_spec import LINA_AGENT_SPEC
 from callaudit.application.fact_extraction import FactExtractor
 from callaudit.bootstrap import build_language_model
 from callaudit.config import Settings
@@ -49,11 +50,12 @@ async def _extract_all(
     extractor: FactExtractor, dataset: Dataset, concurrency: int
 ) -> dict[str, ConversationFacts | str]:
     semaphore = asyncio.Semaphore(concurrency)
+    spec = dataset.agent_spec or LINA_AGENT_SPEC
 
     async def one(conversation: Conversation) -> tuple[str, ConversationFacts | str]:
         async with semaphore:
             try:
-                return conversation.id, await extractor.extract(conversation, dataset.agent_spec)
+                return conversation.id, await extractor.extract(conversation, spec)
             except Exception as exc:
                 return conversation.id, f"{type(exc).__name__}: {exc}"
 

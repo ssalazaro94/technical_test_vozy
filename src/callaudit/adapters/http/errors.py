@@ -9,7 +9,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from callaudit.adapters.http.routes import DatasetFileError
+from callaudit.adapters.http.routes import UploadedFileError
 from callaudit.adapters.http.schemas import ErrorBody, ErrorDetail, ErrorResponse
 
 logger = logging.getLogger(__name__)
@@ -49,13 +49,14 @@ async def _validation(_: Request, exc: Exception) -> JSONResponse:
     )
 
 
-async def _dataset_file(_: Request, exc: Exception) -> JSONResponse:
-    errors = exc.error.errors() if isinstance(exc, DatasetFileError) else []
+async def _uploaded_file(_: Request, exc: Exception) -> JSONResponse:
+    if not isinstance(exc, UploadedFileError):
+        return await _unexpected(_, exc)
     return _response(
         status.HTTP_422_UNPROCESSABLE_CONTENT,
         "archivo_invalido",
-        "El archivo no es un JSON válido con el formato del dataset.",
-        _details(errors),
+        exc.message,
+        [ErrorDetail(location=location, message=message) for location, message in exc.details],
     )
 
 
@@ -83,6 +84,6 @@ async def _unexpected(request: Request, exc: Exception) -> JSONResponse:
 
 def register_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(RequestValidationError, _validation)
-    app.add_exception_handler(DatasetFileError, _dataset_file)
+    app.add_exception_handler(UploadedFileError, _uploaded_file)
     app.add_exception_handler(StarletteHTTPException, _http)
     app.add_exception_handler(Exception, _unexpected)

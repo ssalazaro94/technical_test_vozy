@@ -1,9 +1,10 @@
 import pytest
 
+from callaudit.application.agent_spec import LINA_AGENT_SPEC
 from callaudit.application.fact_extraction import FactExtractionError, FactExtractor
 from callaudit.application.ports import InvalidResponseError, LanguageModelError
 from callaudit.application.prompts import build_system_prompt, build_user_prompt
-from callaudit.domain.conversation import Conversation, Dataset
+from callaudit.domain.conversation import Conversation
 from callaudit.domain.facts import ConversationFacts, Interlocutor, Outcome
 from tests.fakes import ScriptedLanguageModel
 
@@ -32,8 +33,8 @@ class TestPrompts:
             conversations["C07"]
         )
 
-    def test_system_prompt_carries_the_agent_rules(self, dataset: Dataset) -> None:
-        prompt = build_system_prompt(dataset.agent_spec)
+    def test_system_prompt_carries_the_agent_rules(self) -> None:
+        prompt = build_system_prompt(LINA_AGENT_SPEC)
 
         assert "- R10. Mantener un tono respetuoso" in prompt
         assert "Nombre: Lina" in prompt
@@ -50,13 +51,12 @@ class TestPrompts:
 class TestFactExtractor:
     async def test_returns_consistent_facts_on_first_try(
         self,
-        dataset: Dataset,
         conversations: dict[str, Conversation],
         golden_facts: dict[str, ConversationFacts],
     ) -> None:
         llm = ScriptedLanguageModel([golden_facts["C01"]])
 
-        facts = await FactExtractor(llm).extract(conversations["C01"], dataset.agent_spec)
+        facts = await FactExtractor(llm).extract(conversations["C01"], LINA_AGENT_SPEC)
 
         assert facts == golden_facts["C01"]
         assert len(llm.calls) == 1
@@ -64,13 +64,12 @@ class TestFactExtractor:
 
     async def test_retries_with_feedback_when_turns_do_not_fit(
         self,
-        dataset: Dataset,
         conversations: dict[str, Conversation],
         golden_facts: dict[str, ConversationFacts],
     ) -> None:
         llm = ScriptedLanguageModel([SHIFTED, golden_facts["C01"]])
 
-        facts = await FactExtractor(llm).extract(conversations["C01"], dataset.agent_spec)
+        facts = await FactExtractor(llm).extract(conversations["C01"], LINA_AGENT_SPEC)
 
         assert facts == golden_facts["C01"]
         assert (
@@ -79,32 +78,29 @@ class TestFactExtractor:
 
     async def test_retries_with_feedback_when_answer_is_not_valid_json(
         self,
-        dataset: Dataset,
         conversations: dict[str, Conversation],
         golden_facts: dict[str, ConversationFacts],
     ) -> None:
         llm = ScriptedLanguageModel([InvalidResponseError("outcome: invalid"), golden_facts["C01"]])
 
-        await FactExtractor(llm).extract(conversations["C01"], dataset.agent_spec)
+        await FactExtractor(llm).extract(conversations["C01"], LINA_AGENT_SPEC)
 
         assert "respuesta no válida para el esquema: outcome: invalid" in llm.calls[1].user_prompt
 
     async def test_gives_up_after_max_attempts(
-        self, dataset: Dataset, conversations: dict[str, Conversation]
+        self, conversations: dict[str, Conversation]
     ) -> None:
         llm = ScriptedLanguageModel([SHIFTED, SHIFTED])
 
         with pytest.raises(FactExtractionError, match="C01: hechos inconsistentes tras 2 intentos"):
-            await FactExtractor(llm, max_attempts=2).extract(
-                conversations["C01"], dataset.agent_spec
-            )
+            await FactExtractor(llm, max_attempts=2).extract(conversations["C01"], LINA_AGENT_SPEC)
 
     async def test_transport_errors_are_not_retried_here(
-        self, dataset: Dataset, conversations: dict[str, Conversation]
+        self, conversations: dict[str, Conversation]
     ) -> None:
         # The adapter already retried; asking again here would multiply the attempts.
         llm = ScriptedLanguageModel([LanguageModelError("quota")])
 
         with pytest.raises(LanguageModelError):
-            await FactExtractor(llm).extract(conversations["C01"], dataset.agent_spec)
+            await FactExtractor(llm).extract(conversations["C01"], LINA_AGENT_SPEC)
         assert len(llm.calls) == 1

@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from callaudit.adapters.persistence.null import NullAuditRepository
+from callaudit.application.agent_spec import LINA_AGENT_SPEC
 from callaudit.application.audit_service import AuditService
 from callaudit.application.fact_extraction import FactExtractor
 from callaudit.application.ports import AuditRepository
@@ -161,3 +162,38 @@ class TestPersistence:
 
         assert audit.persisted is False
         assert len(audit.warnings) == 1  # only the model warning
+
+
+class TestDefaultSpecification:
+    async def test_single_audit_without_specification_uses_lina(
+        self, conversations: dict[str, Conversation], golden_facts: dict[str, ConversationFacts]
+    ) -> None:
+        llm = ScriptedLanguageModel([golden_facts["C01"]])
+        service = AuditService(FactExtractor(llm), NullAuditRepository())
+
+        await service.audit_conversation(conversations["C01"])
+
+        assert "Nombre: Lina" in llm.calls[0].system_prompt
+
+    async def test_dataset_without_specification_uses_lina(
+        self, dataset: Dataset, golden_facts: dict[str, ConversationFacts]
+    ) -> None:
+        llm = ScriptedLanguageModel([golden_facts["C01"]])
+        service = AuditService(FactExtractor(llm), NullAuditRepository())
+        only_c01 = Dataset(conversations=(dataset.conversations[0],))
+
+        run = await service.audit_dataset(only_c01)
+
+        assert run.audits[0].analysis is AnalysisStatus.COMPLETE
+        assert "Nombre: Lina" in llm.calls[0].system_prompt
+
+    async def test_a_given_specification_takes_precedence(
+        self, dataset: Dataset, golden_facts: dict[str, ConversationFacts]
+    ) -> None:
+        llm = ScriptedLanguageModel([golden_facts["C01"]])
+        service = AuditService(FactExtractor(llm), NullAuditRepository())
+        custom = LINA_AGENT_SPEC.model_copy(update={"agent_name": "Otra"})
+
+        await service.audit_conversation(dataset.conversations[0], custom)
+
+        assert "Nombre: Otra" in llm.calls[0].system_prompt

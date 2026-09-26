@@ -23,7 +23,9 @@ de 21 criterios derivada de sus 10 reglas de negocio.
 - La auditoría de un dataset incluye además un reporte agregado: tasa de cumplimiento por
   criterio y fallas más frecuentes.
 
-Para evaluar el archivo del cliente desde esta página, use **POST /v1/audits/dataset/file**.
+Para subir archivos desde esta página: **POST /v1/audits/file** (una conversación) y
+**POST /v1/audits/dataset/file** (varias, `{conversaciones: [...]}`, o el archivo del cliente
+tal como se entrega). La especificación del agente es opcional en todas las rutas.
 Las auditorías y ejecuciones quedan guardadas y se consultan con **GET /v1/audits/{audit_id}**
 y **GET /v1/reports/{run_id}**.
 """

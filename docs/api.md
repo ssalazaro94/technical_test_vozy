@@ -8,9 +8,12 @@ La documentación interactiva (Swagger) está en `/docs` y el esquema OpenAPI en
 |---|---|---|
 | GET | `/health` | Estado del servicio, modelo de lenguaje activo y versión de la rúbrica |
 | GET | `/v1/rubric` | Criterios, severidades, pesos y regla de puntaje |
-| POST | `/v1/audits` | Audita una conversación |
-| POST | `/v1/audits/dataset` | Audita un conjunto de conversaciones enviado como JSON en el cuerpo |
-| POST | `/v1/audits/dataset/file` | Igual que el anterior, pero recibe el archivo `.json` como subida multipart |
+| POST | `/v1/audits` | Audita una conversación enviada como JSON en el cuerpo |
+| POST | `/v1/audits/file` | Audita una conversación subida como archivo `.json` |
+| POST | `/v1/audits/dataset` | Audita varias conversaciones enviadas como JSON en el cuerpo |
+| POST | `/v1/audits/dataset/file` | Audita varias conversaciones subidas como archivo `.json` |
+
+En todas las rutas, `especificacion_agente` es **opcional**: si no se envía, se usa la especificación de Lina, que es la del agente para el que se diseñó la rúbrica. Si se envía (por ejemplo, el archivo del cliente tal como se entrega), se usa como contexto del modelo de lenguaje. Los 21 criterios no cambian.
 | GET | `/v1/audits/{audit_id}` | Recupera una auditoría guardada |
 | GET | `/v1/reports/{run_id}` | Recupera una ejecución guardada: reporte agregado y todas sus auditorías |
 
@@ -87,9 +90,33 @@ Respuesta (resumida):
 
 Todas las auditorías tienen exactamente la misma estructura, incluso las parciales, y siempre incluyen los 21 criterios en el mismo orden.
 
+## Auditar una conversación desde un archivo
+
+`POST /v1/audits/file` recibe un archivo `.json` (multipart, campo `file`) en cualquiera de dos formas:
+
+```json
+{"id": "C01", "fecha_llamada": "2026-09-22", "datos_cliente": {...}, "transcripcion": [...]}
+```
+
+```json
+{"conversaciones": [{"id": "C01", "fecha_llamada": "2026-09-22", "datos_cliente": {...}, "transcripcion": [...]}]}
+```
+
+Si el archivo trae más de una conversación, responde 422 e indica usar `/v1/audits/dataset/file`.
+
+```bash
+curl -F "file=@/ruta/a/conversacion.json;type=application/json" https://<servicio>/v1/audits/file
+```
+
 ## Auditar un conjunto de conversaciones
 
-`POST /v1/audits/dataset` recibe el mismo formato del archivo del cliente:
+`POST /v1/audits/dataset` recibe:
+
+```json
+{"conversaciones": [ {"id": "...", "fecha_llamada": "...", "datos_cliente": {...}, "transcripcion": [...]} ]}
+```
+
+También acepta el archivo del cliente tal como se entrega, con `descripcion` (se ignora) y `especificacion_agente` (se usa como contexto):
 
 ```json
 {
@@ -98,6 +125,8 @@ Todas las auditorías tienen exactamente la misma estructura, incluso las parcia
   "conversaciones": [ ... ]
 }
 ```
+
+Cada conversación necesita sus `datos_cliente` y su `fecha_llamada`: son la referencia contra la que se verifican el monto, la fecha de vencimiento, los dígitos del documento y la ventana de pago.
 
 `POST /v1/audits/dataset/file` recibe ese mismo contenido como archivo:
 
@@ -157,7 +186,7 @@ Todos los errores usan la misma forma:
 | 405 | `metodo_no_permitido` | Método HTTP no soportado en la ruta |
 | 413 | `demasiado_grande` | Archivo mayor a 2 MB o más de 100 conversaciones |
 | 422 | `entrada_invalida` | El cuerpo JSON no cumple el formato |
-| 422 | `archivo_invalido` | El archivo no es JSON o no tiene el formato del dataset |
+| 422 | `archivo_invalido` | El archivo no es JSON, no tiene el formato esperado o (en `/v1/audits/file`) trae más de una conversación |
 | 500 | `error_interno` | Error inesperado; el detalle queda en el log del servidor |
 | 503 | `persistencia_no_disponible` | Consulta de una auditoría o ejecución sin base configurada, o con la base caída |
 
