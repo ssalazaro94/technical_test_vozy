@@ -94,30 +94,41 @@ cd technical_test_vozy
 docker compose up --build
 ```
 
-- Swagger: http://localhost:8080/docs
-- Estado: http://localhost:8080/health (debe indicar `replay:golden_facts.json` y `database: ok`)
+- Swagger: http://localhost:8089/docs
+- Estado: http://localhost:8089/health (debe indicar `replay:golden_facts.json` y `database: ok`)
 
-Los puertos se eligen con `API_PORT` (por defecto 8080) y `DB_PORT` (por defecto 5433), en la terminal o en `.env`:
+Los puertos se eligen con `API_PORT` (por defecto 8089) y `DB_PORT` (por defecto 5433), en la terminal o en `.env`:
 
 ```bash
-API_PORT=8089 DB_PORT=6543 docker compose up --build   # API en http://localhost:8089/docs
+API_PORT=9000 DB_PORT=6543 docker compose up --build   # API en http://localhost:9000/docs
 ```
 
-`API_PORT` es también el puerto en el que escucha la API dentro del contenedor, igual que la variable `PORT` que inyecta la plataforma en producción. En los ejemplos siguientes, reemplazar 8080 y 5433 si se cambiaron.
+`API_PORT` es también el puerto en el que escucha la API dentro del contenedor, igual que la variable `PORT` que inyecta la plataforma en producción. En los ejemplos siguientes, reemplazar 8089 y 5433 si se cambiaron.
 
 ```bash
 # Auditar el archivo de conversaciones
 curl -F "file=@/ruta/al/dataset.json;type=application/json" \
-  http://localhost:8080/v1/audits/dataset/file > results.json
+  http://localhost:8089/v1/audits/dataset/file > results.json
 
 # Recuperar la ejecución guardada
-curl http://localhost:8080/v1/reports/<run_id>
+curl http://localhost:8089/v1/reports/<run_id>
 
 # Consultar la base
 docker compose exec db psql -U postgres -c "select conversation_id, severity, score, failed_criteria from callaudit.conversation_audits"
 ```
 
 `docker compose down -v` detiene todo y borra la base local. Las migraciones se aplican solas al crear la base por primera vez.
+
+#### Probar con el modelo real en el mismo stack
+
+Con `GEMINI_API_KEY` definida en `.env`, se cambia el proveedor solo del contenedor de la API (la base y sus datos se conservan):
+
+```bash
+API_LLM_PROVIDER=gemini docker compose up -d api   # modelo real: cada auditoría consume cuota
+docker compose up -d api                           # vuelve a replay (sin cuota)
+```
+
+`/health` indica el proveedor activo (`gemini-2.5-flash` o `replay:golden_facts.json`). La clave llega al contenedor por interpolación desde `.env`: no se escribe en `compose.yaml` ni queda dentro de la imagen.
 
 ### Opción B: servicio directo con uv
 
