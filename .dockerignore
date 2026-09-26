@@ -1,0 +1,6 @@
+# Allowlist: the image only receives what it needs to build and run.
+*
+!pyproject.toml
+!uv.lock
+!src
+**/__pycache__

@@ -1,0 +1,45 @@
+# Local stack to try the whole service before deploying: the same image that
+# runs in production, plus a Postgres with the same migrations as Supabase.
+#
+#   docker compose up --build        API on http://localhost:8080/docs
+#   docker compose down -v           stop and wipe the local database
+#
+# No language model is called: the "replay" provider serves the hand-annotated
+# facts in tests/fixtures, so audits are complete without an API key.
+
+name: callaudit
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      # Local development credentials only; never used in production.
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      # Runs the migrations on the first start of an empty volume.
+      - ./supabase/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build: .
+    ports:
+      - "127.0.0.1:8080:8000"
+    environment:
+      LLM_PROVIDER: replay
+      REPLAY_FACTS_PATH: /app/dev/golden_facts.json
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/postgres
+    volumes:
+      - ./tests/fixtures/golden_facts.json:/app/dev/golden_facts.json:ro
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  db-data:
