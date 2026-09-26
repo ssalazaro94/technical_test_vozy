@@ -20,6 +20,10 @@ class LanguageModelError(Exception):
     """The language model could not produce an answer: network, quota, timeout, disabled."""
 
 
+class QuotaExhaustedError(LanguageModelError):
+    """The model's quota for the period is used up: calling again before it resets is pointless."""
+
+
 class InvalidResponseError(LanguageModelError):
     """The language model answered, but not with a valid instance of the schema.
 

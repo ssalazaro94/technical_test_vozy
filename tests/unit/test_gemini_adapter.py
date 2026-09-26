@@ -1,14 +1,19 @@
 """The Gemini adapter, exercised against a fake SDK client: no network, no key."""
 
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
 import pytest
 from google.genai import errors, types
 
-from callaudit.adapters.llm.gemini import GeminiLanguageModel, RetryPolicy
+from callaudit.adapters.llm.gemini import GeminiLanguageModel, RetryPolicy, next_quota_reset
 from callaudit.adapters.llm.rate_limit import MinIntervalRateLimiter
-from callaudit.application.ports import InvalidResponseError, LanguageModelError
+from callaudit.application.ports import (
+    InvalidResponseError,
+    LanguageModelError,
+    QuotaExhaustedError,
+)
 from callaudit.domain.facts import ConversationFacts
 
 VALID_JSON = '{"interlocutor": "titular", "debt_disclosure_turn": 4, "outcome": "compromiso_pago"}'
@@ -165,3 +170,107 @@ class TestRateLimiter:
         await limiter.acquire()
 
         assert sleep.delays == []
+
+
+def _quota_error(quota_id: str, retry_delay: str | None = None) -> errors.APIError:
+    details: list[dict[str, Any]] = [
+        {
+            "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+            "violations": [
+                {"quotaMetric": "generate_content_free_tier_requests", "quotaId": quota_id}
+            ],
+        }
+    ]
+    if retry_delay is not None:
+        details.append(
+            {"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": retry_delay}
+        )
+    return errors.APIError(
+        429,
+        {
+            "error": {
+                "code": 429,
+                "message": "quota",
+                "status": "RESOURCE_EXHAUSTED",
+                "details": details,
+            }
+        },
+    )
+
+
+DAILY = "GenerateRequestsPerDayPerProjectPerModel-FreeTier"
+PER_MINUTE = "GenerateRequestsPerMinutePerProjectPerModel-FreeTier"
+
+
+class _Clock:
+    def __init__(self, now: datetime) -> None:
+        self.now = now
+
+    def __call__(self) -> datetime:
+        return self.now
+
+
+class TestQuota:
+    async def test_daily_quota_fails_fast_without_retrying(self) -> None:
+        models = FakeModels(_quota_error(DAILY, "44.8s"))
+        sleep = RecordingSleep()
+
+        with pytest.raises(QuotaExhaustedError, match="cuota diaria de Gemini agotada"):
+            await _generate(_adapter(models, sleep))
+
+        assert len(models.requests) == 1
+        assert sleep.delays == []
+
+    async def test_after_daily_exhaustion_no_request_is_sent_until_the_reset(self) -> None:
+        clock = _Clock(datetime(2026, 9, 26, 21, 0, tzinfo=UTC))  # 14:00 Pacific
+        models = FakeModels(_quota_error(DAILY), _response(VALID_JSON))
+        adapter = GeminiLanguageModel(
+            model="gemini-test",
+            models=models,
+            retry=RetryPolicy(sleep=RecordingSleep(), jitter=lambda: 1.0, clock=clock),
+        )
+
+        with pytest.raises(QuotaExhaustedError):
+            await _generate(adapter)
+        with pytest.raises(QuotaExhaustedError, match="2026-09-27 07:00 UTC"):
+            await _generate(adapter)
+        assert len(models.requests) == 1  # the second call never reached Google
+
+        clock.now = datetime(2026, 9, 27, 7, 1, tzinfo=UTC)  # 00:01 Pacific
+        facts = await _generate(adapter)
+        assert facts.debt_disclosure_turn == 4
+        assert len(models.requests) == 2
+
+    async def test_per_minute_limit_waits_what_google_suggests(self) -> None:
+        models = FakeModels(_quota_error(PER_MINUTE, "20s"), _response(VALID_JSON))
+        sleep = RecordingSleep()
+
+        await _generate(_adapter(models, sleep))
+
+        assert sleep.delays == [20.0]
+        assert len(models.requests) == 2
+
+    async def test_suggested_wait_is_capped(self) -> None:
+        models = FakeModels(_quota_error(PER_MINUTE, "300s"), _response(VALID_JSON))
+        sleep = RecordingSleep()
+
+        await _generate(_adapter(models, sleep))
+
+        assert sleep.delays == [60.0]
+
+    async def test_a_429_without_details_uses_backoff(self) -> None:
+        models = FakeModels(_api_error(429), _response(VALID_JSON))
+        sleep = RecordingSleep()
+
+        await _generate(_adapter(models, sleep))
+
+        assert sleep.delays == [2.0]
+
+
+def test_quota_resets_at_pacific_midnight() -> None:
+    # 26-sep 14:00 PDT (UTC-7) -> 27-sep 00:00 PDT = 07:00 UTC
+    reset = next_quota_reset(datetime(2026, 9, 26, 21, 0, tzinfo=UTC))
+    assert reset.astimezone(UTC) == datetime(2026, 9, 27, 7, 0, tzinfo=UTC)
+    # In winter (PST, UTC-8) the same local midnight is 08:00 UTC.
+    winter = next_quota_reset(datetime(2026, 12, 1, 12, 0, tzinfo=UTC))
+    assert winter.astimezone(UTC) == datetime(2026, 12, 2, 8, 0, tzinfo=UTC)

@@ -61,7 +61,8 @@ Beneficios de esta división:
 
 | Situación | Comportamiento |
 |---|---|
-| Error transitorio del LLM (429, 5xx, timeout, red) | Reintento con backoff exponencial y jitter (hasta 4 intentos, espera máxima 30 s) |
+| Error transitorio del LLM (429 por minuto, 5xx, timeout, red) | Reintento con backoff exponencial y jitter (hasta 4 intentos, espera máxima 30 s). Si Google indica cuánto esperar (`RetryInfo`, por ejemplo "44s"), se respeta esa espera, con un tope de 60 s |
+| Cuota diaria del LLM agotada (429 con `QuotaFailure` diaria) | Sin reintento: se responde de inmediato y el adaptador no vuelve a llamar al modelo hasta la medianoche del Pacífico, cuando se renueva la cuota. Google cuenta también las peticiones rechazadas, así que reintentar solo alarga la respuesta |
 | Error permanente del LLM (400, 401, 403, 404) | Sin reintento: repetir no lo resuelve y solo consume cuota |
 | Respuesta del LLM que no cumple el esquema o con turnos inconsistentes | Nueva solicitud con los problemas detectados como retroalimentación (hasta 2 intentos) |
 | El LLM no se recupera o no está configurado | La auditoría se entrega igual: criterios de código evaluados, el resto `indeterminado`, `analysis: "parcial"` y una advertencia con la causa. Respuesta HTTP 200 |

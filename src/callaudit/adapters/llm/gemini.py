@@ -4,8 +4,11 @@ import asyncio
 import logging
 import random
 from collections.abc import Awaitable, Callable
+from contextlib import suppress
 from dataclasses import dataclass
+from datetime import UTC, datetime, time, timedelta
 from typing import Any, Protocol
+from zoneinfo import ZoneInfo
 
 import httpx
 from google import genai
@@ -13,13 +16,19 @@ from google.genai import errors, types
 from pydantic import BaseModel, ValidationError
 
 from callaudit.adapters.llm.rate_limit import MinIntervalRateLimiter
-from callaudit.application.ports import InvalidResponseError, LanguageModelError
+from callaudit.application.ports import (
+    InvalidResponseError,
+    LanguageModelError,
+    QuotaExhaustedError,
+)
 
 logger = logging.getLogger(__name__)
 
 # 429: quota or rate limit. 5xx: server side. Everything else (400 bad request,
 # 401/403 bad key, 404 unknown model) will not improve by asking again.
 TRANSIENT_STATUS_CODES = frozenset({408, 429, 500, 502, 503, 504})
+
+QUOTA_RESET_TIMEZONE = ZoneInfo("America/Los_Angeles")
 
 
 class _AsyncModels(Protocol):
@@ -38,14 +47,51 @@ class RetryPolicy:
     timeout_seconds: float = 90
     base_delay_seconds: float = 2.0
     max_delay_seconds: float = 30.0
+    # Upper bound for the wait Google suggests in a 429 ("retry in 44s").
+    max_retry_after_seconds: float = 60.0
     # Injectable so tests run instantly and deterministically.
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep
     jitter: Callable[[], float] = random.random
+    clock: Callable[[], datetime] = lambda: datetime.now(UTC)
 
     def backoff(self, attempt: int) -> float:
         """Exponential backoff with full jitter: uniform in [0, min(cap, base * 2^(n-1))]."""
         ceiling = min(self.max_delay_seconds, self.base_delay_seconds * 2.0 ** (attempt - 1))
         return ceiling * self.jitter()
+
+
+def _quota_details(exc: errors.APIError) -> tuple[bool, float | None]:
+    """Read Google's structured error details: (daily quota exhausted, suggested wait).
+
+    A 429 carries a google.rpc.QuotaFailure whose quotaId names the exhausted
+    quota (e.g. "GenerateRequestsPerDayPerProjectPerModel-FreeTier") and a
+    google.rpc.RetryInfo with the suggested delay (e.g. "44.8s"). Anything
+    missing or malformed yields (False, None): plain backoff, as before.
+    """
+    body = exc.details if isinstance(exc.details, dict) else {}
+    error = body.get("error", {}) if isinstance(body.get("error"), dict) else {}
+    daily = False
+    retry_after: float | None = None
+    for item in error.get("details") or []:
+        if not isinstance(item, dict):
+            continue
+        kind = str(item.get("@type", ""))
+        if kind.endswith("QuotaFailure"):
+            daily = daily or any(
+                "PerDay" in str(violation.get("quotaId", ""))
+                for violation in item.get("violations") or []
+                if isinstance(violation, dict)
+            )
+        elif kind.endswith("RetryInfo"):
+            with suppress(ValueError):
+                retry_after = float(str(item.get("retryDelay", "")).removesuffix("s"))
+    return daily, retry_after
+
+
+def next_quota_reset(now: datetime) -> datetime:
+    """Free tier daily quotas reset at midnight Pacific time."""
+    local = now.astimezone(QUOTA_RESET_TIMEZONE)
+    return datetime.combine(local.date() + timedelta(days=1), time.min, QUOTA_RESET_TIMEZONE)
 
 
 class GeminiLanguageModel:
@@ -66,6 +112,9 @@ class GeminiLanguageModel:
         self._model = model
         self._rate_limiter = rate_limiter
         self._retry = retry or RetryPolicy()
+        # Set when Google reports the daily quota exhausted: until then every
+        # call fails fast, without sending requests that Google still counts.
+        self._blocked_until: datetime | None = None
 
     @property
     def model_name(self) -> str:
@@ -92,9 +141,21 @@ class GeminiLanguageModel:
         text = await self._call_with_retries(user_prompt, config)
         return self._parse(text, schema)
 
+    @staticmethod
+    def _quota_error(until: datetime) -> QuotaExhaustedError:
+        reset = until.astimezone(UTC)
+        return QuotaExhaustedError(
+            "cuota diaria de Gemini agotada; se renueva a la medianoche del Pacífico "
+            f"({reset:%Y-%m-%d %H:%M} UTC)"
+        )
+
     async def _call_with_retries(
         self, user_prompt: str, config: types.GenerateContentConfig
     ) -> str:
+        if self._blocked_until is not None:
+            if self._retry.clock() < self._blocked_until:
+                raise self._quota_error(self._blocked_until)
+            self._blocked_until = None
         for attempt in range(1, self._retry.max_attempts + 1):
             if self._rate_limiter is not None:
                 await self._rate_limiter.acquire()
@@ -106,9 +167,21 @@ class GeminiLanguageModel:
                     timeout=self._retry.timeout_seconds,
                 )
             except errors.APIError as exc:
+                daily, retry_after = _quota_details(exc) if exc.code == 429 else (False, None)
+                if daily:
+                    self._blocked_until = next_quota_reset(self._retry.clock())
+                    logger.warning(
+                        "gemini daily quota exhausted; blocked until %s", self._blocked_until
+                    )
+                    raise self._quota_error(self._blocked_until) from exc
                 if exc.code not in TRANSIENT_STATUS_CODES or attempt == self._retry.max_attempts:
                     raise LanguageModelError(f"Gemini respondió {exc.code}: {exc.message}") from exc
                 reason = f"HTTP {exc.code}"
+                if retry_after is not None:
+                    delay = min(retry_after, self._retry.max_retry_after_seconds)
+                    logger.info("gemini asked to retry in %.1fs (attempt %d)", delay, attempt)
+                    await self._retry.sleep(delay)
+                    continue
             except (TimeoutError, httpx.TransportError) as exc:
                 if attempt == self._retry.max_attempts:
                     raise LanguageModelError(f"Gemini no respondió: {exc!r}") from exc
