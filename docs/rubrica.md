@@ -88,4 +88,4 @@ Se usan tres niveles y no dos porque revelar una deuda a un tercero (riesgo regu
 
 ## Validación
 
-La rúbrica se validó contra una evaluación manual de las 20 conversaciones del cliente. Con los hechos anotados a mano, el motor reproduce exactamente los criterios fallidos y la severidad de cada conversación (tests en `tests/golden/`). La precisión del LLM real frente a esa anotación se mide con `scripts/evaluate_extraction.py`.
+La rúbrica se validó contra una evaluación manual de las 20 conversaciones del cliente. Con los hechos anotados a mano, el motor reproduce exactamente los criterios fallidos y la severidad de cada conversación (tests en `tests/golden/`). La precisión del servicio con el LLM real frente a esa anotación se mide sobre `results.json` con `scripts/evaluate_precision.py` (precisión, recall y F1 de las fallas detectadas; ver el README).

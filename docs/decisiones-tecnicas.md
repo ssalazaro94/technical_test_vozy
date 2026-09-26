@@ -86,7 +86,7 @@ Además, un limitador de ritmo del lado del cliente separa las llamadas (10 por 
 - **Tests unitarios:** montos y fechas en español, modo degradado, validación de hechos, puntaje, reporte, reintentos del adaptador de Gemini (con objetos reales del SDK y sin red) y todos los endpoints.
 - **Tests de integración:** el repositorio de Postgres contra una base real y migrada (se activan con `TEST_DATABASE_URL`).
 - **Stack local:** `docker compose up` levanta la imagen de producción y un Postgres con las migraciones. El proveedor `replay` permite probar el flujo completo sin clave de LLM.
-- **Medición del LLM real:** `scripts/evaluate_extraction.py` compara la extracción de Gemini con la anotación manual y reporta exactitud por campo, y precisión y recall de los veredictos.
+- **Medición de precisión:** `scripts/evaluate_precision.py` compara los veredictos de una ejecución guardada (`results.json`) con la evaluación manual y reporta precisión, recall, F1, coincidencias exactas y de severidad, sin volver a llamar al modelo. `scripts/evaluate_extraction.py` permite, además, diagnosticar la extracción del modelo campo por campo (consume cuota).
 
 ## Limitaciones conocidas
 

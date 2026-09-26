@@ -74,8 +74,10 @@ tests/
   integration/      repositorio contra un Postgres real
   golden/           la rúbrica reproduce la evaluación manual de las 20 conversaciones
   unit/             utilidades, motor, extracción, servicio, adaptadores, API
+  evaluation.py     precisión y recall de una ejecución frente a la evaluación manual
 scripts/
-  evaluate_extraction.py   precisión del LLM real frente a la anotación manual
+  evaluate_precision.py    precisión de un results.json guardado (sin llamar al modelo)
+  evaluate_extraction.py   diagnóstico del modelo real campo por campo (consume cuota)
 ```
 
 ## Cómo correrlo localmente
@@ -159,15 +161,43 @@ TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5433/postgres
 
 Los tests que usan las 20 conversaciones del cliente necesitan la ruta del archivo en `LOCAL_DATASET_PATH` (variable de entorno o `.env`); sin ella se omiten y el resto de la suite se ejecuta normalmente.
 
-### Medir la precisión del LLM
+### Generar `results.json` y medir la precisión
 
-Con `GEMINI_API_KEY` y `LOCAL_DATASET_PATH` definidos:
+La precisión se mide comparando los veredictos del servicio con una **evaluación manual** de las 20 conversaciones (`tests/fixtures/ground_truth.json`): para cada conversación, qué criterios deberían fallar y con qué severidad. Esa referencia la hizo una persona leyendo cada llamada contra la rúbrica.
+
+El flujo usa **una sola ejecución real** del modelo, porque la cuota gratuita de Gemini es diaria y limitada (un lote de 20 conversaciones consume unas 20 llamadas):
+
+**1. Generar `results.json`** (usa el modelo real, una vez):
 
 ```bash
-uv run python scripts/evaluate_extraction.py --out evaluation/extraction.json
+curl -F "file=@/ruta/al/dataset.json;type=application/json" \
+  https://<servicio>/v1/audits/dataset/file > results.json
 ```
 
-Compara los hechos extraídos por el modelo con la anotación manual y reporta exactitud por campo, y precisión y recall de los veredictos.
+`results.json` es la respuesta completa del servicio: el reporte agregado y la auditoría de cada conversación, con sus citas. Es el entregable y se versiona en la raíz del repositorio.
+
+**2. Medir la precisión** (sin modelo, sin clave y sin dataset; se puede repetir cuantas veces se quiera):
+
+```bash
+uv run python scripts/evaluate_precision.py results.json --out evaluation/precision.json
+```
+
+El script compara, conversación por conversación, los criterios que el servicio marcó como `no_cumple` con los de la evaluación manual:
+
+| Término | Significado |
+|---|---|
+| Verdadero positivo (VP) | El servicio y la evaluación manual marcan la misma falla |
+| Falso positivo (FP) | El servicio marca una falla que la evaluación manual no marca (falsa alarma) |
+| Falso negativo (FN) | La evaluación manual marca una falla que el servicio no detectó |
+| Precisión = VP / (VP + FP) | De las fallas que reporta el servicio, qué fracción es real |
+| Recall = VP / (VP + FN) | De las fallas reales, qué fracción encuentra el servicio |
+| F1 | Media armónica de precisión y recall |
+
+Reporta además cuántas conversaciones coinciden exactamente y cuántas tienen la misma severidad, las métricas por criterio y el detalle de cada diferencia. Las auditorías `parcial` (el modelo no respondió) se excluyen y se listan aparte, porque no dicen nada sobre la exactitud del modelo.
+
+**Por qué esta separación.** Los veredictos los emite código determinista a partir de los hechos que extrae el modelo; los tests golden ya prueban que, con los hechos correctos, el código reproduce exactamente la evaluación manual. Por eso cualquier diferencia que aparezca en `results.json` se debe a la extracción del modelo, y se puede medir sobre la respuesta guardada sin volver a llamarlo.
+
+**Diagnóstico campo por campo (opcional, consume cuota).** `scripts/evaluate_extraction.py` vuelve a llamar al modelo y compara cada hecho extraído (por ejemplo, el turno en que se reveló la deuda) con la anotación manual de `tests/fixtures/golden_facts.json`. Sirve para entender por qué falla un veredicto; requiere `GEMINI_API_KEY` y `LOCAL_DATASET_PATH`.
 
 ### Variables de entorno
 
