@@ -1,5 +1,8 @@
 """FastAPI application factory."""
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
 from callaudit.adapters.http.errors import register_error_handlers
@@ -21,6 +24,8 @@ de 21 criterios derivada de sus 10 reglas de negocio.
   criterio y fallas más frecuentes.
 
 Para evaluar el archivo del cliente desde esta página, use **POST /v1/audits/dataset/file**.
+Las auditorías y ejecuciones quedan guardadas y se consultan con **GET /v1/audits/{audit_id}**
+y **GET /v1/reports/{run_id}**.
 """
 
 
@@ -28,10 +33,19 @@ def create_app(service: AuditService | None = None, settings: Settings | None = 
     """Build the app. Tests inject a service; production builds it from the environment."""
     if service is None:
         service = build_audit_service(settings or Settings())
+    audit_service = service
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        yield
+        # Release database connections on shutdown (Render sends SIGTERM on deploys).
+        await audit_service.repository.close()
+
     app = FastAPI(
         title="Auditoría de llamadas de cobranza",
         version="1.0.0",
         description=DESCRIPTION,
+        lifespan=lifespan,
     )
     app.state.audit_service = service
     app.include_router(router)

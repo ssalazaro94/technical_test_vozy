@@ -7,12 +7,14 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
+    "asyncpg>=0.31.0",
     "fastapi>=0.141.1",
     "google-genai>=2.25.0",
     "httpx>=0.28.1",
     "pydantic>=2.9",
     "pydantic-settings>=2.15.0",
     "python-multipart>=0.0.32",
+    "sqlalchemy[asyncio]>=2.1.1",
     "uvicorn[standard]>=0.54.0",
 ]
 
@@ -58,9 +60,11 @@ ignore = [
 "tests/**" = ["PLR0913"]
 # Test doubles implement the ports and may ignore some arguments.
 "tests/fakes.py" = ["ARG002"]
-# Implements the StructuredLanguageModel port: the signature is fixed even
-# though a disabled model ignores its arguments.
+# These adapters implement a port: the signature is fixed even though a
+# disabled model, a null repository or a replay ignores some arguments.
 "src/callaudit/adapters/llm/disabled.py" = ["ARG002"]
+"src/callaudit/adapters/persistence/null.py" = ["ARG002"]
+"src/callaudit/adapters/facts/replay.py" = ["ARG002"]
 
 [tool.mypy]
 strict = true

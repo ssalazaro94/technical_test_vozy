@@ -7,6 +7,7 @@ consumer never has to branch on missing keys.
 from datetime import date
 from enum import StrEnum
 from typing import Self
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -81,6 +82,7 @@ class CriterionResult(_OutputModel):
 
 
 class ConversationAudit(_OutputModel):
+    audit_id: UUID = Field(description="Identificador de la auditoría, para recuperarla después.")
     conversation_id: str
     call_date: date
     analysis: AnalysisStatus
@@ -92,3 +94,7 @@ class ConversationAudit(_OutputModel):
     failed_criteria: list[str]
     criteria: list[CriterionResult]
     warnings: list[str]
+    persisted: bool = Field(
+        default=False,
+        description="Si la auditoría quedó guardada y puede recuperarse por su identificador.",
+    )

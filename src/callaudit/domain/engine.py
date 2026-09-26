@@ -1,6 +1,7 @@
 """Runs the rubric over one conversation and assembles its audit."""
 
 from collections.abc import Sequence
+from uuid import UUID, uuid4
 
 from callaudit.domain.audit import (
     AnalysisStatus,
@@ -53,6 +54,7 @@ def audit_conversation(
     *,
     warnings: Sequence[str] = (),
     rubric: Sequence[Criterion] = RUBRIC,
+    audit_id: UUID | None = None,
 ) -> ConversationAudit:
     """Apply every criterion to the conversation.
 
@@ -65,6 +67,7 @@ def audit_conversation(
     ctx = AuditContext(conversation, facts)
     results = [_run(criterion, ctx) for criterion in rubric]
     return ConversationAudit(
+        audit_id=audit_id or uuid4(),
         conversation_id=conversation.id,
         call_date=conversation.call_date,
         analysis=AnalysisStatus.COMPLETE if facts is not None else AnalysisStatus.PARTIAL,

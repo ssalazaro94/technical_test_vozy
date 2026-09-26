@@ -3,10 +3,13 @@
 import asyncio
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
+from uuid import UUID
 
 from pydantic import BaseModel
 
-from callaudit.application.ports import LanguageModelError
+from callaudit.application.models import DatasetAudit
+from callaudit.application.ports import LanguageModelError, PersistenceError
+from callaudit.domain.audit import ConversationAudit
 from callaudit.domain.conversation import Conversation
 from callaudit.domain.facts import ConversationFacts
 
@@ -80,3 +83,60 @@ class GoldenLanguageModel:
             return schema.model_validate(self.facts[cid].model_dump())
         finally:
             self.in_flight -= 1
+
+
+class InMemoryAuditRepository:
+    """A working repository without a database."""
+
+    def __init__(self) -> None:
+        self.audits: dict[UUID, ConversationAudit] = {}
+        self.runs: dict[UUID, DatasetAudit] = {}
+        self.closed = False
+
+    @property
+    def name(self) -> str:
+        return "memoria"
+
+    @property
+    def enabled(self) -> bool:
+        return True
+
+    async def save_audit(self, audit: ConversationAudit) -> None:
+        self.audits[audit.audit_id] = audit
+
+    async def save_run(self, run: DatasetAudit) -> None:
+        self.runs[run.run_id] = run
+        for audit in run.audits:
+            self.audits[audit.audit_id] = audit
+
+    async def get_audit(self, audit_id: UUID) -> ConversationAudit | None:
+        audit = self.audits.get(audit_id)
+        return audit.model_copy(update={"persisted": True}) if audit else None
+
+    async def get_run(self, run_id: UUID) -> DatasetAudit | None:
+        return self.runs.get(run_id)
+
+    async def ping(self) -> None:
+        return None
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+class BrokenAuditRepository(InMemoryAuditRepository):
+    """A configured repository whose database is down."""
+
+    async def save_audit(self, audit: ConversationAudit) -> None:
+        raise PersistenceError("connection refused")
+
+    async def save_run(self, run: DatasetAudit) -> None:
+        raise PersistenceError("connection refused")
+
+    async def get_audit(self, audit_id: UUID) -> ConversationAudit | None:
+        raise PersistenceError("connection refused")
+
+    async def get_run(self, run_id: UUID) -> DatasetAudit | None:
+        raise PersistenceError("connection refused")
+
+    async def ping(self) -> None:
+        raise PersistenceError("connection refused")

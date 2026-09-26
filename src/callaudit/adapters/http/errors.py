@@ -18,6 +18,7 @@ _CODES = {
     status.HTTP_404_NOT_FOUND: "no_encontrado",
     status.HTTP_405_METHOD_NOT_ALLOWED: "metodo_no_permitido",
     status.HTTP_413_CONTENT_TOO_LARGE: "demasiado_grande",
+    status.HTTP_503_SERVICE_UNAVAILABLE: "persistencia_no_disponible",
 }
 
 

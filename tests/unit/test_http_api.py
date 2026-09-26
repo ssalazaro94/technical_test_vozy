@@ -16,16 +16,22 @@ from callaudit.application.fact_extraction import FactExtractor
 from callaudit.config import Settings
 from callaudit.domain.conversation import Conversation, Dataset
 from callaudit.domain.facts import ConversationFacts
-from tests.fakes import GoldenLanguageModel
+from tests.fakes import BrokenAuditRepository, GoldenLanguageModel, InMemoryAuditRepository
+
+
+@pytest.fixture
+def repository() -> InMemoryAuditRepository:
+    return InMemoryAuditRepository()
 
 
 @pytest.fixture
 def app(
-    conversations: dict[str, Conversation], golden_facts: dict[str, ConversationFacts]
+    conversations: dict[str, Conversation],
+    golden_facts: dict[str, ConversationFacts],
+    repository: InMemoryAuditRepository,
 ) -> FastAPI:
     llm = GoldenLanguageModel(conversations, golden_facts, failing=frozenset({"C03"}))
-    service = AuditService(FactExtractor(llm), model_name=llm.model_name)
-    return create_app(service)
+    return create_app(AuditService(FactExtractor(llm), repository))
 
 
 @pytest.fixture
@@ -47,6 +53,8 @@ async def test_health_reports_model_and_rubric(client: httpx.AsyncClient) -> Non
         "status": "ok",
         "language_model": "golden-fake",
         "rubric_version": "2026-09-25",
+        "persistence": "memoria",
+        "database": "ok",
     }
 
 
@@ -202,3 +210,70 @@ async def test_swagger_examples_are_valid_requests() -> None:
         for example in examples.values():
             response = await client.post("/v1/audits", json=example["value"])
             assert response.status_code == 200, response.text
+
+
+class TestReadEndpoints:
+    async def test_a_posted_audit_can_be_read_back(
+        self, client: httpx.AsyncClient, conversations: dict[str, Conversation]
+    ) -> None:
+        payload = {"conversacion": conversations["C20"].model_dump(mode="json", by_alias=True)}
+        created = (await client.post("/v1/audits", json=payload)).json()
+
+        response = await client.get(f"/v1/audits/{created['audit_id']}")
+
+        assert response.status_code == 200
+        assert response.json() == {**created, "persisted": True}
+
+    async def test_a_dataset_run_can_be_read_back(
+        self, client: httpx.AsyncClient, dataset: Dataset
+    ) -> None:
+        created = (await client.post("/v1/audits/dataset", json=_dataset_json(dataset))).json()
+        assert created["persisted"] is True
+
+        response = await client.get(f"/v1/reports/{created['run_id']}")
+
+        assert response.status_code == 200
+        assert response.json()["report"] == created["report"]
+        assert [a["audit_id"] for a in response.json()["audits"]] == [
+            a["audit_id"] for a in created["audits"]
+        ]
+
+    async def test_unknown_ids_return_404(self, client: httpx.AsyncClient) -> None:
+        unknown = "00000000-0000-0000-0000-000000000000"
+        for path in (f"/v1/audits/{unknown}", f"/v1/reports/{unknown}"):
+            response = await client.get(path)
+            assert response.status_code == 404
+            assert response.json()["error"]["code"] == "no_encontrado"
+
+    async def test_malformed_id_returns_422(self, client: httpx.AsyncClient) -> None:
+        response = await client.get("/v1/audits/not-a-uuid")
+        assert response.status_code == 422
+
+    async def test_without_database_reads_return_503(self) -> None:
+        app = create_app(settings=Settings(_env_file=None, llm_provider="none"))
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            health = (await client.get("/health")).json()
+            response = await client.get("/v1/audits/00000000-0000-0000-0000-000000000000")
+
+        assert health["persistence"] == "deshabilitada"
+        assert health["database"] == "no_configurada"
+        assert response.status_code == 503
+        assert response.json()["error"]["code"] == "persistencia_no_disponible"
+
+    async def test_database_down_still_audits_and_health_reports_it(
+        self, conversations: dict[str, Conversation], golden_facts: dict[str, ConversationFacts]
+    ) -> None:
+        llm = GoldenLanguageModel(conversations, golden_facts)
+        app = create_app(AuditService(FactExtractor(llm), BrokenAuditRepository()))
+        transport = httpx.ASGITransport(app=app)
+        payload = {"conversacion": conversations["C01"].model_dump(mode="json", by_alias=True)}
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            health = (await client.get("/health")).json()
+            audit = await client.post("/v1/audits", json=payload)
+            read = await client.get(f"/v1/audits/{audit.json()['audit_id']}")
+
+        assert health["database"] == "error"
+        assert audit.status_code == 200
+        assert audit.json()["persisted"] is False
+        assert read.status_code == 503

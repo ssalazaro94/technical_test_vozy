@@ -2,12 +2,15 @@
 
 import logging
 
+from callaudit.adapters.facts.replay import ReplayFactSource
 from callaudit.adapters.llm.disabled import DisabledLanguageModel
 from callaudit.adapters.llm.gemini import GeminiLanguageModel, RetryPolicy
 from callaudit.adapters.llm.rate_limit import MinIntervalRateLimiter
+from callaudit.adapters.persistence.null import NullAuditRepository
+from callaudit.adapters.persistence.postgres import PostgresAuditRepository
 from callaudit.application.audit_service import AuditService
 from callaudit.application.fact_extraction import FactExtractor
-from callaudit.application.ports import StructuredLanguageModel
+from callaudit.application.ports import AuditRepository, FactSource, StructuredLanguageModel
 from callaudit.config import Settings
 
 logger = logging.getLogger(__name__)
@@ -33,10 +36,32 @@ def build_language_model(settings: Settings) -> StructuredLanguageModel:
     )
 
 
+def build_fact_source(settings: Settings) -> FactSource:
+    if settings.llm_provider == "replay":
+        if settings.replay_facts_path is None:
+            raise ValueError("LLM_PROVIDER=replay requires REPLAY_FACTS_PATH")
+        logger.warning(
+            "replaying annotated facts from %s: development only", settings.replay_facts_path
+        )
+        return ReplayFactSource(settings.replay_facts_path)
+    return FactExtractor(
+        build_language_model(settings), max_attempts=settings.extraction_max_attempts
+    )
+
+
+def build_repository(settings: Settings) -> AuditRepository:
+    if settings.database_url is None:
+        logger.warning("DATABASE_URL is not set; audits will not be stored")
+        return NullAuditRepository()
+    return PostgresAuditRepository.from_url(
+        settings.database_url.get_secret_value(),
+        timeout_seconds=settings.database_timeout_seconds,
+    )
+
+
 def build_audit_service(settings: Settings) -> AuditService:
-    llm = build_language_model(settings)
     return AuditService(
-        FactExtractor(llm, max_attempts=settings.extraction_max_attempts),
-        model_name=llm.model_name,
+        build_fact_source(settings),
+        build_repository(settings),
         max_concurrency=settings.llm_max_concurrency,
     )
