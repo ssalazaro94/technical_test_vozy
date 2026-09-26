@@ -23,12 +23,13 @@ services:
         value: gemini
       - key: LLM_MODEL
         value: gemini-3.8-flash
-      # Free tier guard rails. The project's gemini-3.8-flash limits in Google AI
-      # Studio are 5 requests per minute and 20 per day: stay below 5 RPM.
+      # Paid tier limits for gemini-3.8-flash in this project: 1,000 requests per
+      # minute, 2M tokens per minute, 10,000 per day. Speed does not change cost;
+      # spending is capped by LLM_DAILY_CALL_BUDGET below.
       - key: LLM_REQUESTS_PER_MINUTE
-        value: "4"
+        value: "60"
       - key: LLM_MAX_CONCURRENCY
-        value: "2"
+        value: "4"
       # Spending guards for a public API with a paid key: at most 100 model calls
       # per UTC day (about USD 1.1 with gemini-3.8-flash) and 30 audit requests
       # per hour per client IP.
