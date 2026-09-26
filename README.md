@@ -203,6 +203,18 @@ Reporta además cuántas conversaciones coinciden exactamente y cuántas tienen 
 
 **Por qué esta separación.** Los veredictos los emite código determinista a partir de los hechos que extrae el modelo; los tests golden ya prueban que, con los hechos correctos, el código reproduce exactamente la evaluación manual. Por eso cualquier diferencia que aparezca en `results.json` se debe a la extracción del modelo, y se puede medir sobre la respuesta guardada sin volver a llamarlo.
 
+**Resultado de la ejecución publicada** ([`results.json`](results.json), detalle en [`evaluation/precision.json`](evaluation/precision.json)), con `gemini-3.8-flash` sobre las 20 conversaciones:
+
+| Métrica | Valor |
+|---|---|
+| Precisión | 1.0 (ninguna falsa alarma) |
+| Recall | 0.967 (29 de 30 fallas reales detectadas) |
+| F1 | 0.983 |
+| Conversaciones con exactamente las mismas fallas | 19 de 20 |
+| Conversaciones con la misma severidad | 20 de 20 |
+
+La única diferencia es C09, criterio R7.a: el cliente afirma haber pagado y dice "Voy a ir al banco a reclamar"; la evaluación manual lo considera un reclamo que obliga a registrar el contacto con un asesor, el modelo no. Es un caso límite de juicio y se documenta como tal: ajustar el prompt a partir de un caso del conjunto de prueba sería sobreajuste.
+
 **Diagnóstico campo por campo (opcional, consume cuota).** `scripts/evaluate_extraction.py` vuelve a llamar al modelo y compara cada hecho extraído (por ejemplo, el turno en que se reveló la deuda) con la anotación manual de `tests/fixtures/golden_facts.json`. Sirve para entender por qué falla un veredicto; requiere `GEMINI_API_KEY` y `LOCAL_DATASET_PATH`.
 
 ### Variables de entorno

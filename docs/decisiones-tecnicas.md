@@ -104,7 +104,7 @@ Además, un limitador de ritmo del lado del cliente separa las llamadas (4 por m
 ## Limitaciones conocidas
 
 - **Rúbrica específica del agente.** Los criterios están diseñados para las reglas de Lina. El endpoint acepta otra especificación de agente (se usa como contexto del prompt), pero los criterios no cambian.
-- **Juicio subjetivo en tono y presión (R10.b).** Es el criterio más dependiente del modelo; dos evaluadores humanos también podrían discrepar en casos límite.
+- **Juicio subjetivo en casos límite.** El tono (R10.b) y la frontera entre anunciar un reclamo y presentarlo (R7, conversación C09, la única discrepancia con la evaluación manual) dependen de interpretación; dos evaluadores humanos también podrían discrepar.
 - **Validación con una sola anotación.** La evaluación de referencia la hizo una sola persona sobre 20 conversaciones. Es suficiente para detectar regresiones, no para estimar la precisión con intervalos de confianza estrechos.
 - **Formatos de fecha y monto no cubiertos.** Fechas con el día en palabras ("quince de septiembre") o montos con decimales ("1,5 millones") no se reconocen. En esos casos el criterio falla por "no mencionó la fecha" o compara contra otro valor. Todas las formas presentes en el dataset están cubiertas por tests.
 - **Transcripción como verdad.** Se asume que la transcripción es correcta; los errores del reconocimiento de voz se trasladan a la evaluación.

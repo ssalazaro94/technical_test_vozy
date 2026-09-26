@@ -1,0 +1,214 @@
+{
+  "run_id": "f42fe40b-1c1d-43a4-adb9-ec97c454a2aa",
+  "model": "gemini-3.8-flash",
+  "conversations_compared": 20,
+  "skipped_partial": [],
+  "missing_from_run": [],
+  "not_in_ground_truth": [],
+  "exact_matches": 19,
+  "severity_matches": 20,
+  "true_positives": 29,
+  "false_positives": 0,
+  "false_negatives": 1,
+  "precision": 1.0,
+  "recall": 0.967,
+  "f1": 0.983,
+  "per_criterion": [
+    {
+      "criterion_id": "R1.a",
+      "true_positives": 1,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "precision": 1.0,
+      "recall": 1.0
+    },
+    {
+      "criterion_id": "R1.b",
+      "true_positives": 1,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "precision": 1.0,
+      "recall": 1.0
+    },
+    {
+      "criterion_id": "R2.a",
+      "true_positives": 0,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "precision": null,
+      "recall": null
+    },
+    {
+      "criterion_id": "R2.b",
+      "true_positives": 2,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "precision": 1.0,
+      "recall": 1.0
+    },
+    {
+      "criterion_id": "R2.c",
+      "true_positives": 1,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "precision": 1.0,
+      "recall": 1.0
+    },
+    {
+      "criterion_id": "R3.a",
+      "true_positives": 1,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "precision": 1.0,
+      "recall": 1.0
+    },
+    {
+      "criterion_id": "R3.b",
+      "true_positives": 1,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "precision": 1.0,
+      "recall": 1.0
+    },
+    {
+      "criterion_id": "R4.a",
+      "true_positives": 1,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "precision": 1.0,
+      "recall": 1.0
+    },
+    {
+      "criterion_id": "R4.b",
+      "true_positives": 1,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "precision": 1.0,
+      "recall": 1.0
+    },
+    {
+      "criterion_id": "R5.a",
+      "true_positives": 1,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "precision": 1.0,
+      "recall": 1.0
+    },
+    {
+      "criterion_id": "R5.b",
+      "true_positives": 2,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "precision": 1.0,
+      "recall": 1.0
+    },
+    {
+      "criterion_id": "R6.a",
+      "true_positives": 1,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "precision": 1.0,
+      "recall": 1.0
+    },
+    {
+      "criterion_id": "R6.b",
+      "true_positives": 1,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "precision": 1.0,
+      "recall": 1.0
+    },
+    {
+      "criterion_id": "R7.a",
+      "true_positives": 1,
+      "false_positives": 0,
+      "false_negatives": 1,
+      "precision": 1.0,
+      "recall": 0.5
+    },
+    {
+      "criterion_id": "R8.a",
+      "true_positives": 1,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "precision": 1.0,
+      "recall": 1.0
+    },
+    {
+      "criterion_id": "R8.b",
+      "true_positives": 1,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "precision": 1.0,
+      "recall": 1.0
+    },
+    {
+      "criterion_id": "R8.c",
+      "true_positives": 1,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "precision": 1.0,
+      "recall": 1.0
+    },
+    {
+      "criterion_id": "R9.a",
+      "true_positives": 5,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "precision": 1.0,
+      "recall": 1.0
+    },
+    {
+      "criterion_id": "R9.b",
+      "true_positives": 2,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "precision": 1.0,
+      "recall": 1.0
+    },
+    {
+      "criterion_id": "R10.a",
+      "true_positives": 2,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "precision": 1.0,
+      "recall": 1.0
+    },
+    {
+      "criterion_id": "R10.b",
+      "true_positives": 2,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "precision": 1.0,
+      "recall": 1.0
+    }
+  ],
+  "mismatches": [
+    {
+      "conversation_id": "C09",
+      "expected_failures": [
+        "R10.a",
+        "R10.b",
+        "R7.a",
+        "R8.a",
+        "R8.b",
+        "R8.c",
+        "R9.a"
+      ],
+      "predicted_failures": [
+        "R10.a",
+        "R10.b",
+        "R8.a",
+        "R8.b",
+        "R8.c",
+        "R9.a"
+      ],
+      "false_positives": [],
+      "false_negatives": [
+        "R7.a"
+      ],
+      "expected_severity": "critica",
+      "predicted_severity": "critica"
+    }
+  ]
+}
