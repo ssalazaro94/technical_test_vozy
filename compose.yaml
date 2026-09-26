@@ -1,8 +1,13 @@
 # Local stack to try the whole service before deploying: the same image that
 # runs in production, plus a Postgres with the same migrations as Supabase.
 #
-#   docker compose up --build        API on http://localhost:8080/docs
-#   docker compose down -v           stop and wipe the local database
+#   docker compose up --build                  API on http://localhost:8080/docs
+#   API_PORT=9000 docker compose up --build    same, on another host port
+#   docker compose down -v                     stop and wipe the local database
+#
+# Ports come from API_PORT and DB_PORT (shell or .env); the defaults are 8080
+# and 5433. API_PORT is also the port uvicorn listens on inside the container,
+# the same way Render sets PORT; Postgres always listens on 5432 inside.
 #
 # No language model is called: the "replay" provider serves the hand-annotated
 # facts in tests/fixtures, so audits are complete without an API key.
@@ -16,7 +21,7 @@ services:
       # Local development credentials only; never used in production.
       POSTGRES_PASSWORD: postgres
     ports:
-      - "127.0.0.1:5433:5432"
+      - "127.0.0.1:${DB_PORT:-5433}:5432"
     volumes:
       - db-data:/var/lib/postgresql/data
       # Runs the migrations on the first start of an empty volume.
@@ -30,8 +35,10 @@ services:
   api:
     build: .
     ports:
-      - "127.0.0.1:8080:8000"
+      - "127.0.0.1:${API_PORT:-8080}:${API_PORT:-8080}"
     environment:
+      # Same variable Render injects: uvicorn listens on it inside the container.
+      PORT: ${API_PORT:-8080}
       LLM_PROVIDER: replay
       REPLAY_FACTS_PATH: /app/dev/golden_facts.json
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/postgres
