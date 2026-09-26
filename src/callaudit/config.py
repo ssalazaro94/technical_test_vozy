@@ -18,8 +18,9 @@ class Settings(BaseSettings):
 
     # Free tier guard rails: requests in flight, requests per minute and
     # attempts per request (transient errors only).
-    llm_max_concurrency: int = Field(default=4, ge=1)
-    llm_requests_per_minute: float = Field(default=10, gt=0)
+    # Defaults fit the free tier of gemini-3.8-flash (5 requests per minute).
+    llm_max_concurrency: int = Field(default=2, ge=1)
+    llm_requests_per_minute: float = Field(default=4, gt=0)
     llm_max_attempts: int = Field(default=4, ge=1)
     llm_timeout_seconds: float = Field(default=90, gt=0)
 

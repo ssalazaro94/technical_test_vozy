@@ -2,6 +2,8 @@
 
 Servicio que evalúa conversaciones del agente de voz **Lina** (Banco Andino, entidad ficticia) contra una rúbrica de 21 criterios derivada de sus 10 reglas de negocio. Para cada conversación devuelve el resultado de cada criterio (`cumple`, `no_cumple`, `no_aplica`) con la cita textual que lo justifica, un puntaje de 0 a 100 y una severidad global. Para un conjunto de conversaciones devuelve además un reporte agregado con la tasa de cumplimiento por criterio y las fallas más frecuentes.
 
+**URL pública:** https://services.mitnid.com (documentación interactiva en [/docs](https://services.mitnid.com/docs)).
+
 ## Documentación
 
 | Documento | Contenido |
@@ -10,6 +12,7 @@ Servicio que evalúa conversaciones del agente de voz **Lina** (Banco Andino, en
 | [docs/decisiones-tecnicas.md](docs/decisiones-tecnicas.md) | Qué se resuelve con código y qué con LLM, manejo de errores y limitaciones conocidas |
 | [docs/costos.md](docs/costos.md) | Costo estimado de evaluar 1.000 conversaciones |
 | [docs/api.md](docs/api.md) | Endpoints, ejemplos de uso y formato de errores |
+| [docs/despliegue.md](docs/despliegue.md) | Producción: Render, Supabase, variables, migraciones y cuota del modelo |
 | [docs/hallazgos.md](docs/hallazgos.md) | Informe para el cliente: fallas principales del agente y ajustes recomendados |
 
 ## Arquitectura
@@ -124,7 +127,7 @@ docker compose exec db psql -U postgres -c "select conversation_id, severity, sc
 
 #### Probar con el modelo real en el mismo stack
 
-El contenedor de la API toma `LLM_PROVIDER`, `LLM_MODEL` y `GEMINI_API_KEY` del `.env`. Para usar el modelo real se define `LLM_PROVIDER=gemini` (y la clave) en `.env`, y se recrea solo la API (la base y sus datos se conservan):
+El contenedor de la API toma `LLM_PROVIDER`, `LLM_MODEL`, `LLM_REQUESTS_PER_MINUTE`, `LLM_MAX_CONCURRENCY` y `GEMINI_API_KEY` del `.env`. Para usar el modelo real se define `LLM_PROVIDER=gemini` (y la clave) en `.env`, y se recrea solo la API (la base y sus datos se conservan):
 
 ```bash
 docker compose up -d api
@@ -172,7 +175,7 @@ El flujo usa **una sola ejecución real** del modelo, porque la cuota gratuita d
 
 ```bash
 curl -F "file=@/ruta/al/dataset.json;type=application/json" \
-  https://<servicio>/v1/audits/dataset/file > results.json
+  https://services.mitnid.com/v1/audits/dataset/file > results.json
 ```
 
 `results.json` es la respuesta completa del servicio: el reporte agregado y la auditoría de cada conversación, con sus citas. Es el entregable y se versiona en la raíz del repositorio.
@@ -209,8 +212,8 @@ Reporta además cuántas conversaciones coinciden exactamente y cuántas tienen 
 | `LLM_PROVIDER` | `gemini` | `gemini`, `none` (solo criterios de código) o `replay` (solo desarrollo) |
 | `LLM_MODEL` | `gemini-3.8-flash` | Modelo de Gemini |
 | `GEMINI_API_KEY` | vacío | Clave de Google AI Studio |
-| `LLM_MAX_CONCURRENCY` | `4` | Llamadas simultáneas al LLM |
-| `LLM_REQUESTS_PER_MINUTE` | `10` | Ritmo máximo de llamadas (límite del tier gratuito) |
+| `LLM_MAX_CONCURRENCY` | `2` | Llamadas simultáneas al LLM |
+| `LLM_REQUESTS_PER_MINUTE` | `4` | Ritmo máximo de llamadas (el tier gratuito de `gemini-3.8-flash` admite 5 por minuto) |
 | `LLM_MAX_ATTEMPTS` | `4` | Intentos ante errores transitorios (429, 5xx, red) |
 | `LLM_TIMEOUT_SECONDS` | `90` | Tiempo máximo por llamada |
 | `EXTRACTION_MAX_ATTEMPTS` | `2` | Intentos ante respuestas inválidas o inconsistentes |

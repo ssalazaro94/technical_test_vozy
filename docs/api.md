@@ -1,6 +1,6 @@
 # API
 
-La documentación interactiva (Swagger) está en `/docs` y el esquema OpenAPI en `/openapi.json`. La raíz `/` redirige a `/docs`.
+Servicio en producción: **https://services.mitnid.com**. La documentación interactiva (Swagger) está en [/docs](https://services.mitnid.com/docs) y el esquema OpenAPI en `/openapi.json`. La raíz `/` redirige a `/docs`.
 
 ## Endpoints
 
@@ -106,7 +106,7 @@ Todas las auditorías tienen exactamente la misma estructura, incluso las parcia
 Si el archivo trae más de una conversación, responde 422 e indica usar `/v1/audits/dataset/file`.
 
 ```bash
-curl -F "file=@/ruta/a/conversacion.json;type=application/json" https://<servicio>/v1/audits/file
+curl -F "file=@/ruta/a/conversacion.json;type=application/json" https://services.mitnid.com/v1/audits/file
 ```
 
 ## Auditar un conjunto de conversaciones
@@ -133,7 +133,7 @@ Cada conversación necesita sus `datos_cliente` y su `fecha_llamada`: son la ref
 
 ```bash
 curl -F "file=@/ruta/al/dataset.json;type=application/json" \
-  https://<servicio>/v1/audits/dataset/file
+  https://services.mitnid.com/v1/audits/dataset/file
 ```
 
 Respuesta:
@@ -192,6 +192,8 @@ Todos los errores usan la misma forma:
 | 422 | `archivo_invalido` | El archivo no es JSON, no tiene el formato esperado o (en `/v1/audits/file`) trae más de una conversación |
 | 500 | `error_interno` | Error inesperado; el detalle queda en el log del servidor |
 | 503 | `persistencia_no_disponible` | Consulta de una auditoría o ejecución sin base configurada, o con la base caída |
+
+Cuando se agota la cuota diaria del modelo, el aviso lo dice explícitamente ("cuota diaria de Gemini agotada; se renueva a la medianoche del Pacífico...") y el servicio deja de llamar al modelo hasta la renovación; las conversaciones ya analizadas siguen saliendo completas desde el caché de hechos.
 
 Una falla del modelo de lenguaje o de la base de datos al **auditar** no es un error HTTP: se responde 200 con la auditoría (en modo `parcial` si falló el modelo, con `persisted: false` si falló la base) y la causa en `warnings`.
 

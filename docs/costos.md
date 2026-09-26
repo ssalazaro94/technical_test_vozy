@@ -6,7 +6,7 @@ Modelo: `gemini-3.8-flash`. Precios tomados de la página oficial de precios de 
 
 | Escenario | Costo por 1.000 conversaciones | Tiempo aproximado |
 |---|---|---|
-| Tier gratuito (configuración actual) | **USD 0** | 100 minutos a 10 llamadas por minuto, sujeto al límite diario del proyecto |
+| Tier gratuito (configuración actual) | **USD 0** | 250 minutos a 4 llamadas por minuto; con el límite de 20 llamadas diarias del proyecto, 1.000 conversaciones nuevas tomarían 50 días |
 | Tier de pago, razonamiento mínimo | **~USD 3,7** | Limitado solo por la cuota de pago |
 | Tier de pago, razonamiento por defecto del modelo (`high`, configuración actual) | **~USD 12** | Limitado solo por la cuota de pago |
 | Tier de pago con Batch API (50% de descuento, respuesta diferida) | **~USD 1,9 a 6** | Horas (asíncrono) |
@@ -51,7 +51,7 @@ subtotal con razonamiento por defecto          = USD 10,88 -> +10% reintentos = 
 
 ## Tier gratuito: costo cero, pero con límites de volumen
 
-El tier gratuito no cobra: da una cuota de llamadas por minuto y por día, por proyecto, que se reinicia a la medianoche del Pacífico. Los límites varían por modelo y se consultan en Google AI Studio. Con la configuración por defecto del servicio (10 llamadas por minuto), 1.000 conversaciones toman unos 100 minutos. Si el límite diario fuera menor que el volumen, el lote tendría que repartirse en varios días o pasar al tier de pago.
+El tier gratuito no cobra: da una cuota de llamadas por minuto y por día, por proyecto y por modelo, que se reinicia a la medianoche del Pacífico. Los límites se consultan en Google AI Studio; para `gemini-3.8-flash` en este proyecto son 5 llamadas por minuto, 250.000 tokens por minuto y 20 llamadas por día. Con la configuración del servicio (4 llamadas por minuto), 1.000 conversaciones nuevas tomarían unos 250 minutos de ejecución, pero el límite diario las repartiría en unos 50 días: **para ese volumen el tier gratuito no es viable** y corresponde el tier de pago (o la Batch API). El tier gratuito cubre bien el alcance de esta prueba y las re-auditorías, que salen del caché de hechos sin consumir cuota.
 
 ## Cómo reducir el costo
 
