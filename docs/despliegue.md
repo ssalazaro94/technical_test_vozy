@@ -34,8 +34,8 @@ El servicio está descrito en [`render.yaml`](../render.yaml) (Blueprint de Rend
 |---|---|---|
 | `LLM_PROVIDER` | `gemini` | `render.yaml` |
 | `LLM_MODEL` | `gemini-3.8-flash` | `render.yaml` |
-| `LLM_REQUESTS_PER_MINUTE` | `4` | `render.yaml` |
-| `LLM_MAX_CONCURRENCY` | `2` | `render.yaml` |
+| `LLM_REQUESTS_PER_MINUTE` | `60` | `render.yaml` |
+| `LLM_MAX_CONCURRENCY` | `4` | `render.yaml` |
 | `LLM_DAILY_CALL_BUDGET` | `100` | `render.yaml` |
 | `CLIENT_REQUESTS_PER_HOUR` | `30` | `render.yaml` |
 | `GEMINI_API_KEY` | Secreto | Panel de Render (`sync: false` en el Blueprint) |
@@ -58,15 +58,12 @@ supabase migration list        # local y remoto deben coincidir
 
 Las mismas migraciones crean la base del stack local (`compose.yaml`).
 
-## Cuota del modelo (tier gratuito)
+## Cuota y costo del modelo
 
-Límites de `gemini-3.8-flash` en el proyecto de Google AI Studio: **5 llamadas por minuto, 250.000 tokens por minuto y 20 llamadas por día**, renovadas a la medianoche del Pacífico.
-
-Cómo los respeta el servicio:
-
-- **Ritmo:** 4 llamadas por minuto y 2 simultáneas, por debajo del límite.
-- **Cuota diaria agotada:** se detecta en el detalle estructurado del error (`QuotaFailure` diaria). El servicio no reintenta y no vuelve a llamar al modelo hasta la renovación (Google cuenta también las peticiones rechazadas). Las conversaciones afectadas salen como `parcial` con la causa.
-- **Caché de hechos:** una conversación idéntica a una ya analizada no llama al modelo. Auditar de nuevo el archivo de la prueba es instantáneo y no consume cuota; una conversación nueva o modificada sí la consume.
+- **Tier de pago** (producción desde el 26 de septiembre de 2026): límites de `gemini-3.8-flash` en el proyecto de 1.000 llamadas por minuto, 2 millones de tokens por minuto y 10.000 llamadas por día. El servicio usa 60 llamadas por minuto y 4 simultáneas: un lote de 20 conversaciones nuevas tarda segundos. El gasto lo acota el presupuesto diario (ver abajo).
+- **Tier gratuito** (desarrollo, y la primera ejecución de `results.json`): 5 llamadas por minuto, 250.000 tokens por minuto y 20 por día, renovadas a la medianoche del Pacífico. Los valores por defecto del código (4 por minuto, 2 simultáneas) lo respetan.
+- **Cuota agotada:** se detecta en el detalle estructurado del error (`QuotaFailure` diaria). El servicio no reintenta y no vuelve a llamar al modelo hasta la renovación (Google cuenta también las peticiones rechazadas). Las conversaciones afectadas salen como `parcial` con la causa.
+- **Caché de hechos:** una conversación idéntica a una ya analizada no llama al modelo. Auditar de nuevo el archivo de la prueba es instantáneo y no cuesta nada; una conversación nueva o modificada sí llama al modelo.
 
 ## Protección del gasto
 
@@ -92,4 +89,4 @@ curl https://services.mitnid.com/v1/audits/00000000-0000-0000-0000-000000000000 
 
 - **Arranque en frío:** Render detiene el servicio tras unos 15 minutos sin tráfico; la primera petición siguiente tarda cerca de un minuto.
 - **Pausa de Supabase:** los proyectos gratuitos se pausan tras una semana sin actividad. Auditar sigue funcionando (sin guardar ni usar el caché), y las consultas de auditorías guardadas responden 503 hasta reactivarlo.
-- **Volumen:** con 20 llamadas diarias al modelo, lotes grandes de conversaciones nuevas requieren varios días o el tier de pago (ver [costos.md](costos.md)).
+- **Volumen:** el presupuesto diario (100 llamadas al modelo) limita cuántas conversaciones nuevas se analizan por día; para lotes grandes se sube `LLM_DAILY_CALL_BUDGET` según el costo aceptado (ver [costos.md](costos.md)).

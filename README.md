@@ -54,6 +54,7 @@ flowchart LR
 4. **Puntaje y reporte.** Puntaje ponderado por severidad, severidad global y agregación por criterio.
 5. **Caché de hechos.** Antes de llamar al modelo se busca una extracción previa de una conversación idéntica: misma transcripción, datos del cliente, fecha, especificación del agente, versión del prompt y modelo (la clave es una huella SHA-256 de todo eso; el `id` de la conversación no participa). Si existe, se reutiliza sin gastar cuota; cualquier diferencia, por mínima que sea, provoca una llamada nueva al modelo. Cada auditoría indica el origen de sus hechos en `facts_origin` (`modelo`, `cache` o `replay`).
 6. **Persistencia.** La auditoría (o la ejecución completa, en una sola transacción) se guarda en Postgres y se puede recuperar por su identificador. Si la base falla, la auditoría se entrega igual con `persisted: false`.
+7. **Protección del gasto.** La API es pública y el modelo se paga por uso: el servicio impone un tope diario de llamadas al modelo (contado en la base) y un límite de solicitudes por cliente. Ver [docs/despliegue.md](docs/despliegue.md).
 
 Si el LLM no está disponible (sin clave, cuota agotada, error de red), la auditoría no falla: se evalúan los criterios que solo dependen de código, el resto queda `indeterminado` y la auditoría se marca `parcial` con la causa.
 
@@ -61,27 +62,34 @@ Si el LLM no está disponible (sin clave, cuota agotada, error de red), la audit
 
 ```
 src/callaudit/
-  domain/           rúbrica, modelos de entrada y salida, puntaje, reporte (sin dependencias externas)
-    criteria/       un módulo por grupo de reglas (R1-R2, R3-R4, R5-R6, R7-R8, R9-R10)
-    text/           normalización, números y fechas en español, léxicos
-  application/      casos de uso, prompts, puertos, especificación por defecto del agente
+  domain/              rúbrica, modelos de entrada y salida, puntaje, reporte (sin dependencias externas)
+    criteria/          un módulo por grupo de reglas (R1-R2, R3-R4, R5-R6, R7-R8, R9-R10)
+    text/              normalización, números y fechas en español, léxicos
+    facts.py           contrato con el LLM: solo índices de turno, validados contra la transcripción
+  application/         casos de uso y puertos
+    prompts.py         instrucciones del modelo
+    fact_extraction.py extracción con autocorrección
+    fact_cache.py      caché de hechos (clave SHA-256)
+    budget.py          tope diario de llamadas al modelo
+    audit_service.py   auditar una conversación o un lote
   adapters/
-    http/           FastAPI: rutas, esquemas, ejemplos de Swagger, errores
-    llm/            Gemini, modelo deshabilitado, limitador de ritmo
-    facts/          replay de hechos anotados (solo desarrollo)
-    persistence/    Postgres (SQLAlchemy async) y repositorio nulo
-  bootstrap.py      composición: qué adaptador implementa cada puerto
-  config.py         configuración por variables de entorno
-supabase/migrations/     esquema SQL (el mismo en local y en Supabase)
-Dockerfile, compose.yaml imagen de producción y stack local
-tests/
-  integration/      repositorio contra un Postgres real
-  golden/           la rúbrica reproduce la evaluación manual de las 20 conversaciones
-  unit/             utilidades, motor, extracción, servicio, adaptadores, API
-  evaluation.py     precisión y recall de una ejecución frente a la evaluación manual
+    llm/               Gemini (reintentos y cuota), modelo deshabilitado, limitador de ritmo
+    persistence/       Postgres: auditorías, caché y contador de uso; versiones nulas sin base
+    http/              FastAPI: rutas, errores, límite por cliente, documentación con favicon propio
+    facts/             replay de hechos anotados (solo desarrollo)
+  evaluation.py        precisión y recall de una ejecución frente a la evaluación manual
+  bootstrap.py         composición: qué adaptador implementa cada puerto
+  config.py            configuración por variables de entorno
 scripts/
   evaluate_precision.py    precisión de un results.json guardado (sin llamar al modelo)
-  evaluate_extraction.py   diagnóstico del modelo real campo por campo (consume cuota)
+  evaluate_extraction.py   diagnóstico del modelo real campo por campo (consume llamadas)
+tests/
+  golden/              la rúbrica reproduce la evaluación manual de las 20 conversaciones
+  unit/                utilidades, motor, extracción, caché, gasto, servicio, adaptadores, API
+  integration/         Postgres real (repositorio, caché, contador de uso)
+supabase/migrations/   esquema SQL (el mismo en local y en Supabase)
+Dockerfile, compose.yaml, render.yaml   imagen, stack local y despliegue
+results.json, evaluation/precision.json resultados publicados y su precisión
 ```
 
 ## Cómo correrlo localmente
@@ -169,7 +177,7 @@ Los tests que usan las 20 conversaciones del cliente necesitan la ruta del archi
 
 La precisión se mide comparando los veredictos del servicio con una **evaluación manual** de las 20 conversaciones (`tests/fixtures/ground_truth.json`): para cada conversación, qué criterios deberían fallar y con qué severidad. Esa referencia la hizo una persona leyendo cada llamada contra la rúbrica.
 
-El flujo usa **una sola ejecución real** del modelo, porque la cuota gratuita de Gemini es diaria y limitada (un lote de 20 conversaciones consume unas 20 llamadas):
+El flujo usa **una sola ejecución real** del modelo (cada conversación nueva es una llamada con costo o cuota) y mide la precisión sobre esa misma respuesta, sin volver a llamarlo:
 
 **1. Generar `results.json`** (usa el modelo real, una vez):
 
@@ -180,7 +188,7 @@ curl -F "file=@/ruta/al/dataset.json;type=application/json" \
 
 `results.json` es la respuesta completa del servicio: el reporte agregado y la auditoría de cada conversación, con sus citas. Es el entregable y se versiona en la raíz del repositorio.
 
-Si la cuota diaria se agota a mitad de la ejecución, las conversaciones sin análisis salen como `parcial` (el servicio no falla). Al repetir el mismo comando después de la renovación de la cuota, las conversaciones ya analizadas salen del caché de hechos y solo las faltantes llaman al modelo. `facts_origin_distribution` en la respuesta muestra cuántas vinieron de cada origen.
+Si la cuota del modelo se agota a mitad de la ejecución, las conversaciones sin análisis salen como `parcial` (el servicio no falla). Al repetir el mismo comando, las conversaciones ya analizadas salen del caché de hechos y solo las faltantes llaman al modelo. Así se generó el `results.json` publicado: la primera ejecución, con la cuota gratuita (20 llamadas diarias), completó 13 conversaciones; la segunda tomó esas 13 del caché y analizó las 7 restantes (`facts_origin_distribution`: `{"cache": 13, "modelo": 7}`).
 
 **2. Medir la precisión** (sin modelo, sin clave y sin dataset; se puede repetir cuantas veces se quiera):
 
@@ -224,8 +232,8 @@ La única diferencia es C09, criterio R7.a: el cliente afirma haber pagado y dic
 | `LLM_PROVIDER` | `gemini` | `gemini`, `none` (solo criterios de código) o `replay` (solo desarrollo) |
 | `LLM_MODEL` | `gemini-3.8-flash` | Modelo de Gemini |
 | `GEMINI_API_KEY` | vacío | Clave de Google AI Studio |
-| `LLM_MAX_CONCURRENCY` | `2` | Llamadas simultáneas al LLM |
-| `LLM_REQUESTS_PER_MINUTE` | `4` | Ritmo máximo de llamadas (el tier gratuito de `gemini-3.8-flash` admite 5 por minuto) |
+| `LLM_MAX_CONCURRENCY` | `2` | Llamadas simultáneas al LLM (producción, tier de pago: 4) |
+| `LLM_REQUESTS_PER_MINUTE` | `4` | Ritmo máximo de llamadas; el valor por defecto respeta el tier gratuito (5 por minuto). Producción, tier de pago: 60 |
 | `LLM_MAX_ATTEMPTS` | `4` | Intentos ante errores transitorios (429, 5xx, red) |
 | `LLM_TIMEOUT_SECONDS` | `90` | Tiempo máximo por llamada |
 | `EXTRACTION_MAX_ATTEMPTS` | `2` | Intentos ante respuestas inválidas o inconsistentes |

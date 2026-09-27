@@ -7,7 +7,7 @@
 | Lenguaje | Python 3.12 | SDK oficial de Gemini, ecosistema de validación maduro, sintaxis de genéricos (PEP 695) para el puerto del LLM |
 | Framework HTTP | FastAPI | Validación de entrada y salida con los mismos modelos Pydantic, OpenAPI y Swagger generados automáticamente, soporte async nativo |
 | Validación | Pydantic v2 | La salida se valida por construcción: un `no_cumple` sin cita o un campo de más no se pueden serializar |
-| LLM | Gemini 3.8 Flash (tier gratuito) | Costo cero, salida JSON restringida por esquema, modelo Flash estable vigente (Google retiró Gemini 2.5 Flash para cuentas nuevas) |
+| LLM | Gemini 3.8 Flash | Salida JSON restringida por esquema y modelo Flash estable vigente (Google retiró Gemini 2.5 Flash para cuentas nuevas). Tier gratuito en desarrollo; tier de pago en producción, con tope de gasto diario |
 | Entorno | uv + `pyproject.toml` + `uv.lock` | Instalación reproducible y rápida |
 | Calidad | pytest, ruff, mypy en modo estricto | Tests sin red, lint y tipado estático en todo el código |
 | Persistencia | Postgres en Supabase, con SQLAlchemy async y asyncpg | SQL estándar sin acoplarse al SDK de Supabase: cambiar de proveedor es cambiar `DATABASE_URL` |
@@ -73,7 +73,7 @@ Beneficios de esta división:
 | Presupuesto diario del servicio agotado (`LLM_DAILY_CALL_BUDGET`) | No se llama al modelo; las conversaciones nuevas salen parciales con el aviso y las ya analizadas salen del caché. Si el contador no responde, tampoco se llama al modelo (falla cerrado) |
 | Demasiadas solicitudes de un cliente (`CLIENT_REQUESTS_PER_HOUR`) | HTTP 429 con `Retry-After` en las rutas de auditoría |
 
-Además, un limitador de ritmo del lado del cliente separa las llamadas (4 por minuto por defecto, bajo el límite de 5 del tier gratuito de `gemini-3.8-flash`) y un semáforo limita las llamadas simultáneas (2 por defecto).
+Además, un limitador de ritmo del lado del cliente separa las llamadas y un semáforo limita las simultáneas. Los valores por defecto (4 por minuto, 2 simultáneas) respetan el tier gratuito (5 por minuto); en producción, con el tier de pago, son 60 por minuto y 4 simultáneas.
 
 ## Persistencia
 
@@ -90,7 +90,7 @@ Además, un limitador de ritmo del lado del cliente separa las llamadas (4 por m
 - **Conversaciones nuevas o modificadas:** cualquier cambio (un carácter de un turno, un dato del cliente, la fecha, las reglas, el prompt o el modelo) produce otra clave, y se llama al modelo. No existe riesgo de servir los hechos de otra conversación.
 - **Validación al leer:** los hechos del caché se vuelven a validar contra la conversación; si no cuadran, se ignoran y se llama al modelo.
 - **Tolerante a fallos:** si la base no responde, la auditoría sigue con el modelo.
-- **Por qué:** la cuota gratuita del modelo es de 20 llamadas diarias. Sin caché, auditar el mismo archivo dos veces en un día (por ejemplo, la generación de `results.json` y la verificación de un evaluador) agotaría la cuota y la segunda ejecución saldría parcial. Con caché, repetir un archivo ya auditado es instantáneo, gratuito y da exactamente el mismo resultado. Una ejecución interrumpida por la cuota se completa más tarde gastando solo las llamadas faltantes.
+- **Por qué:** cada llamada al modelo consume cuota (20 diarias en el tier gratuito) o dinero (en el tier de pago). Sin caché, auditar el mismo archivo varias veces (la generación de `results.json`, la verificación de cada evaluador) repetiría ese gasto. Con caché, repetir un archivo ya auditado es instantáneo, gratuito y da exactamente el mismo resultado; una ejecución interrumpida por la cuota se completa después gastando solo las llamadas faltantes, que es como se generó el `results.json` publicado.
 - **Transparencia:** cada auditoría indica `facts_origin` y cada ejecución `facts_origin_distribution`.
 
 ## Estrategia de pruebas
@@ -109,9 +109,9 @@ Además, un limitador de ritmo del lado del cliente separa las llamadas (4 por m
 - **Formatos de fecha y monto no cubiertos.** Fechas con el día en palabras ("quince de septiembre") o montos con decimales ("1,5 millones") no se reconocen. En esos casos el criterio falla por "no mencionó la fecha" o compara contra otro valor. Todas las formas presentes en el dataset están cubiertas por tests.
 - **Transcripción como verdad.** Se asume que la transcripción es correcta; los errores del reconocimiento de voz se trasladan a la evaluación.
 - **No determinismo residual.** Se usa la temperatura por defecto del modelo, porque Google desaconseja bajarla en Gemini 3. En casos ambiguos, el modelo puede variar entre ejecuciones. Los criterios de código no varían, y la validación de turnos contra la transcripción acota el margen de error.
-- **Lote síncrono.** Evaluar 20 conversaciones nuevas respetando 4 llamadas por minuto toma unos 5 a 7 minutos en una sola petición HTTP (desde el caché, segundos). Para volúmenes mayores convendría un procesamiento asíncrono con cola.
+- **Lote síncrono.** Un lote se procesa en una sola petición HTTP: segundos con la configuración de producción (60 llamadas por minuto) o desde el caché, y unos 5 a 7 minutos con los límites del tier gratuito. Para volúmenes mayores convendría un procesamiento asíncrono con cola.
 - **Disponibilidad del proveedor.** El modelo puede responder 503 por alta demanda en momentos puntuales; el servicio reintenta con backoff y, si persiste, entrega esa conversación como parcial con la causa.
 - **Sin autenticación.** La API es pública, como pide el ejercicio. El gasto se acota con un presupuesto diario de llamadas al modelo y un límite por IP (ver [despliegue.md](despliegue.md)); en producción real se agregaría autenticación y límites por cliente identificado.
-- **Cuota del modelo para conversaciones nuevas.** El caché solo evita llamadas para conversaciones ya analizadas. Con el tier gratuito (20 llamadas diarias en este proyecto), un lote grande de conversaciones nuevas se completa parcialmente y requiere repetirse tras la renovación de la cuota o pasar al tier de pago.
+- **Costo por conversación nueva.** El caché solo evita llamadas para conversaciones ya analizadas. Cada conversación nueva cuesta una llamada al modelo, y el presupuesto diario (100 llamadas en producción) limita cuántas se analizan por día; por encima, salen parciales hasta el día siguiente.
 - **Pausa de la base gratuita.** Supabase pausa los proyectos gratuitos tras una semana sin actividad. Auditar sigue funcionando (con `persisted: false`), pero las consultas de auditorías guardadas responden 503 hasta reactivar el proyecto.
 - **Arranque en frío.** En el plan gratuito de la plataforma de despliegue, la primera petición después de un periodo sin tráfico puede tardar cerca de un minuto.
