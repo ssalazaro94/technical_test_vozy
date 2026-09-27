@@ -13,7 +13,8 @@ Servicio que evalúa conversaciones del agente de voz **Lina** (Banco Andino, en
 | [docs/costos.md](docs/costos.md) | Costo estimado de evaluar 1.000 conversaciones |
 | [docs/api.md](docs/api.md) | Endpoints, ejemplos de uso y formato de errores |
 | [docs/despliegue.md](docs/despliegue.md) | Producción: Render, Supabase, variables, migraciones y cuota del modelo |
-| [docs/hallazgos.md](docs/hallazgos.md) | Informe para el cliente: fallas principales del agente y ajustes recomendados |
+
+El informe de hallazgos para el cliente (las tres fallas principales del agente y los ajustes recomendados) se entrega aparte, como carta de una página.
 
 ## Arquitectura
 
